@@ -1,0 +1,16 @@
+{
+	"targets": [
+		{
+			"name": "talesofcultivation",
+			"displayName": "수선전",
+			"entry": "src/main.js",
+			"icon": "assets/icons/talesofcultivation_icon.png"
+		}
+	],
+
+	"platforms": {
+		"web": {
+			"deployRoot": "\\\\DS216PLUSII\\web\\com.ddukbaek2.talesofcultivation"
+		}
+	}
+}
