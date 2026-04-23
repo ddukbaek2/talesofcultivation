@@ -11,9 +11,41 @@ import { Graphic } from "../libs/vanilla.js/src/core/graphic.js";
 import { ImageAsset } from "../libs/vanilla.js/src/resource/imageasset.js";
 import { AudioAsset } from "../libs/vanilla.js/src/resource/audioasset.js";
 import { FontAsset } from "../libs/vanilla.js/src/resource/fontasset.js";
+import { JsonAsset } from "../libs/vanilla.js/src/resource/jsonasset.js";
 import { DEVTools } from "../libs/vanilla.js/src/misc/devtools.js";
 import { ViewScaleMode } from "../libs/vanilla.js/src/core/viewmanager.js";
 import { Colors } from "../libs/vanilla.js/src/base/colors.js";
+import { MergeGame } from "./minigame/mergegame.js";
+import { CardBattleGame } from "./minigame/cardbattlegame.js";
+
+
+//==============================================================================
+// 활성 미니게임 식별자.
+//==============================================================================
+const MinigameKey = System.Object.freeze({
+	merge: "merge",
+	cardBattle: "cardBattle",
+});
+
+
+//==============================================================================
+// JSON 데이터 애셋 식별자.
+//==============================================================================
+const JsonId = System.Object.freeze({
+	cardTable: 1,
+	sectTable: 2,
+	realmTable: 3,
+	characterTable: 4,
+});
+
+
+//==============================================================================
+// 폰트 애셋 식별자.
+//==============================================================================
+const FontId = System.Object.freeze({
+	gyeonggiBatangRegular: 1,
+	gyeonggiBatangBold: 2,
+});
 
 
 //==============================================================================
@@ -27,12 +59,19 @@ export class TalesOfCultivation extends Scene {
 	/** @private @type { Map<number, ImageAsset> } */ #loadedImageAssets;
 	/** @private @type { Map<number, AudioAsset> } */ #loadedAudioAssets;
 	/** @private @type { Map<number, FontAsset> } */ #loadedFontAssets;
+	/** @private @type { Map<number, JsonAsset> } */ #loadedJsonAssets;
 	/** @private @type { Array<{ id: number, path: string }> } */ #pendingImageLoads;
 	/** @private @type { Array<{ id: number, path: string }> } */ #pendingAudioLoads;
 	/** @private @type { Array<{ id: number, name: string, path: string }> } */ #pendingFontLoads;
+	/** @private @type { Array<{ id: number, path: string }> } */ #pendingJsonLoads;
 	/** @private @type { number } */ #loadedAssetCount;
 	/** @private @type { number } */ #totalAssetCount;
 	/** @private @type { string } */ #loadingAssetPath;
+	/** @private @type { MergeGame } */ #mergeGame;
+	/** @private @type { CardBattleGame } */ #cardBattleGame;
+	/** @private @type { string } */ #activeMinigameKey;
+	/** @private @type { boolean } */ #prevIsKey1;
+	/** @private @type { boolean } */ #prevIsKey2;
 
 	//==============================================================================
 	// 생성.
@@ -53,13 +92,22 @@ export class TalesOfCultivation extends Scene {
 		this.#loadedImageAssets = new System.Map();
 		this.#loadedAudioAssets = new System.Map();
 		this.#loadedFontAssets = new System.Map();
+		this.#loadedJsonAssets = new System.Map();
 		this.#pendingImageLoads = [];
 		this.#pendingAudioLoads = [];
 		this.#pendingFontLoads = [];
+		this.#pendingJsonLoads = [];
 		// 로딩 화면.
 		this.#loadedAssetCount = 0;
 		this.#totalAssetCount = 0;
 		this.#loadingAssetPath = "";
+		// 미니게임 (팝업으로 표시됨). 활성 식별자는 키 1/2 또는 setActiveMinigameKey 로 변경.
+		// 기본값: 카드 배틀 (1번).
+		this.#mergeGame = new MergeGame();
+		this.#cardBattleGame = new CardBattleGame();
+		this.#activeMinigameKey = MinigameKey.cardBattle;
+		this.#prevIsKey1 = false;
+		this.#prevIsKey2 = false;
 	}
 
 	//==============================================================================
@@ -79,6 +127,16 @@ export class TalesOfCultivation extends Scene {
 		this.#devtools = new DEVTools();
 		this.#devtools.setEngine(engine);
 
+		// 폰트 애셋 예약 (경기천년바탕체 Regular / Bold).
+		this.loadFontAsset(FontId.gyeonggiBatangRegular, "GyeonggiBatang", "./assets/fonts/GyeonggiMillenniumBatang_Regular.woff2");
+		this.loadFontAsset(FontId.gyeonggiBatangBold, "GyeonggiBatangBold", "./assets/fonts/GyeonggiMillenniumBatang_Bold.woff2");
+
+		// 데이터 애셋 예약 (테이블별 json. 시트명 = 파일명 = 테이블 이름).
+		this.loadJsonAsset(JsonId.cardTable, "./assets/data/table/cardtable.json");
+		this.loadJsonAsset(JsonId.sectTable, "./assets/data/table/secttable.json");
+		this.loadJsonAsset(JsonId.realmTable, "./assets/data/table/realmtable.json");
+		this.loadJsonAsset(JsonId.characterTable, "./assets/data/table/charactertable.json");
+
 		// 예약된 모든 리소스 로드.
 		await this.loadAllAssets();
 	}
@@ -96,6 +154,13 @@ export class TalesOfCultivation extends Scene {
 		// 하이어라키 루트 노드 등록.
 		const root = this.getRoot();
 		this.#devtools.setRootNodes([root]);
+
+		// 카드 테이블 데이터를 카드배틀 게임에 주입 (주입 시점에 게임이 새 판으로 초기화됨).
+		// 시트명 = json 파일명 = 테이블 이름. 파일 최상위는 배열.
+		const cardTableAsset = this.getLoadedJsonAsset(JsonId.cardTable);
+		if (cardTableAsset && System.Array.isArray(cardTableAsset.data)) {
+			this.#cardBattleGame.setCardDefinitions(cardTableAsset.data);
+		}
 	}
 
 	//==============================================================================
@@ -115,6 +180,33 @@ export class TalesOfCultivation extends Scene {
 
 		// 개발자 도구 갱신 (항상 최우선).
 		this.#devtools.tick(unscaledTimeDelta);
+
+		// 미니게임 전환 (1: 카드 배틀, 2: 머지). just-pressed 트리거.
+		// setActiveMinigameKey 를 거치므로 전환 시 해당 게임이 처음 상태로 reset.
+		const inputManager = engine.getInputManager();
+		const isKey1 = inputManager.isKeyPressed("Digit1");
+		const isKey2 = inputManager.isKeyPressed("Digit2");
+		if (isKey1 && !this.#prevIsKey1) {
+			this.setActiveMinigameKey(MinigameKey.cardBattle);
+		}
+		if (isKey2 && !this.#prevIsKey2) {
+			this.setActiveMinigameKey(MinigameKey.merge);
+		}
+		this.#prevIsKey1 = isKey1;
+		this.#prevIsKey2 = isKey2;
+
+		// 활성 미니게임 갱신 (780x780 팝업 영역 안에서). 데브툴 패널 위에서는 입력 차단.
+		if (!this.isHierarchyCapturingInput()) {
+			const viewManager = engine.getViewManager();
+			const viewSize = viewManager.getViewSize();
+			const popupRect = this.computeMinigamePopupRect(viewSize);
+			if (this.#activeMinigameKey === MinigameKey.merge) {
+				this.#mergeGame.tick(timeDelta, inputManager, popupRect);
+			}
+			else if (this.#activeMinigameKey === MinigameKey.cardBattle) {
+				this.#cardBattleGame.tick(timeDelta, inputManager, popupRect);
+			}
+		}
 	}
 
 	//==============================================================================
@@ -130,6 +222,7 @@ export class TalesOfCultivation extends Scene {
 		const canvasRenderingContext = graphic.getCanvasRenderingContext();
 		const viewManager = engine.getViewManager();
 		const canvasNativeSize = viewManager.getCanvasNativeSize();
+		const viewSize = viewManager.getViewSize();
 
 		// 전체 화면 칠하기.
 		viewManager.applyCanvasNativeRect(canvasRenderingContext);
@@ -138,8 +231,8 @@ export class TalesOfCultivation extends Scene {
 
 		// 게임 영역 칠하기.
 		viewManager.applyViewRect(canvasRenderingContext);
-		graphic.setFillColor(Colors.lightVanilla);
-		graphic.drawRect(Rect.create(0, 0, viewSize.x, viewSize.y));
+		// graphic.setFillColor(Colors.lightVanilla);
+		// graphic.drawRect(Rect.create(0, 0, viewSize.x, viewSize.y));
 	}
 
 	//==============================================================================
@@ -152,6 +245,61 @@ export class TalesOfCultivation extends Scene {
 	draw(graphic) {
 		super.draw(graphic);
 
+		const engine = this.getEngine();
+		const viewManager = engine.getViewManager();
+		const viewSize = viewManager.getViewSize();
+		const popupRect = this.computeMinigamePopupRect(viewSize);
+		const canvasRenderingContext = graphic.getCanvasRenderingContext();
+
+		// 전경 딤드 (팝업이 위에 떠 있음을 강조).
+		canvasRenderingContext.fillStyle = "rgba(0, 0, 0, 0.55)";
+		canvasRenderingContext.fillRect(0, 0, viewSize.x, viewSize.y);
+
+		// 팝업 박스 (배경 + 골드 테두리).
+		canvasRenderingContext.fillStyle = "#1a1a2e";
+		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
+		canvasRenderingContext.strokeStyle = "#d4b46a";
+		canvasRenderingContext.lineWidth = 3;
+		canvasRenderingContext.strokeRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
+
+		// 활성 미니게임 출력 (팝업 내부에 한정).
+		if (this.#activeMinigameKey === MinigameKey.merge) {
+			this.#mergeGame.draw(graphic, popupRect);
+		}
+		else if (this.#activeMinigameKey === MinigameKey.cardBattle) {
+			this.#cardBattleGame.draw(graphic, popupRect);
+		}
+	}
+
+	//==============================================================================
+	// 미니게임 팝업 사각 영역 계산 (뷰 중앙 780x780 정사각).
+	//==============================================================================
+	/**
+	 * @param { Vector2 } viewSize
+	 * @returns { { x: number, y: number, width: number, height: number } }
+	 */
+	computeMinigamePopupRect(viewSize) {
+		const popupSize = 780;
+		const popupX = System.Math.floor((viewSize.x - popupSize) * 0.5);
+		const popupY = System.Math.floor((viewSize.y - popupSize) * 0.5);
+		return { x: popupX, y: popupY, width: popupSize, height: popupSize };
+	}
+
+	//==============================================================================
+	// 활성 미니게임 식별자 설정. 전환 시 대상 미니게임을 처음 상태로 reset.
+	// 외부 메뉴/내비게이션 또는 키 1/2 핸들러에서 호출.
+	//==============================================================================
+	/**
+	 * @param { string } minigameKey
+	 */
+	setActiveMinigameKey(minigameKey) {
+		this.#activeMinigameKey = minigameKey;
+		if (minigameKey === MinigameKey.merge) {
+			this.#mergeGame.reset();
+		}
+		else if (minigameKey === MinigameKey.cardBattle) {
+			this.#cardBattleGame.reset();
+		}
 	}
 
 	//==============================================================================
@@ -164,11 +312,21 @@ export class TalesOfCultivation extends Scene {
 	postDraw(graphic) {
 		super.postDraw(graphic);
 
-		// 개발자 도구 패널 출력 (항상 최상단).
-		this.#devtools.draw(graphic);
-
 		// FPS 표시 (좌측 상단).
 		this.drawFramePerSecond(graphic);
+
+		const canvasRenderingContext = graphic.getCanvasRenderingContext();
+		const viewManager = engine.getViewManager();
+		const canvasNativeSize = viewManager.getCanvasNativeSize();
+		const viewSize = viewManager.getViewSize();
+
+		// 전체 화면 칠하기.
+		// viewManager.applyCanvasNativeRect(canvasRenderingContext);
+		// graphic.setFillColor(Colors.darkVanilla);
+		// graphic.drawRect(Rect.create(0, 0, canvasNativeSize.x, canvasNativeSize.y));
+
+		// 개발자 도구 패널 출력 (항상 최상단).
+		this.#devtools.draw(graphic);
 	}
 
 	//==============================================================================
@@ -416,6 +574,36 @@ export class TalesOfCultivation extends Scene {
 	}
 
 	//==============================================================================
+	// JSON 불러오기 예약.
+	//==============================================================================
+	/**
+	 * @param { number } jsonId
+	 * @param { string } assetPath
+	 */
+	loadJsonAsset(jsonId, assetPath) {
+		if (typeof jsonId === "string") {
+			jsonId = Number.parseInt(jsonId);
+		}
+		this.#pendingJsonLoads.push({ id: jsonId, path: assetPath });
+		++this.#totalAssetCount;
+	}
+
+	//==============================================================================
+	// 불러온 JSON 반환.
+	//==============================================================================
+	/**
+	 * @param { number } jsonId
+	 * @returns { JsonAsset }
+	 */
+	getLoadedJsonAsset(jsonId) {
+		if (typeof jsonId === "string") {
+			jsonId = Number.parseInt(jsonId);
+		}
+		const loadedJsonAsset = this.#loadedJsonAssets.get(jsonId);
+		return loadedJsonAsset;
+	}
+
+	//==============================================================================
 	// 예약된 모든 리소스를 순차적으로 로드.
 	//==============================================================================
 	async loadAllAssets() {
@@ -440,9 +628,17 @@ export class TalesOfCultivation extends Scene {
 			this.#loadedFontAssets.set(pendingFont.id, fontAsset);
 			++this.#loadedAssetCount;
 		}
+		for (const pendingJson of this.#pendingJsonLoads) {
+			this.#loadingAssetPath = pendingJson.path;
+			const jsonAsset = new JsonAsset();
+			await jsonAsset.load(pendingJson.path);
+			this.#loadedJsonAssets.set(pendingJson.id, jsonAsset);
+			++this.#loadedAssetCount;
+		}
 		this.#pendingImageLoads = [];
 		this.#pendingAudioLoads = [];
 		this.#pendingFontLoads = [];
+		this.#pendingJsonLoads = [];
 	}
 
 	//==============================================================================

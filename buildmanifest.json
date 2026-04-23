@@ -10,7 +10,7 @@
 
 	"platforms": {
 		"web": {
-			"deployRoot": "\\\\DS216PLUSII\\web\\com.ddukbaek2.talesofcultivation"
+			"deployRoot": "\\\\DS216PLUSII\\web\\talesofcultivation"
 		}
 	}
 }

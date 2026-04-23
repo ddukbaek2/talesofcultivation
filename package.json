@@ -1,0 +1,18 @@
+{
+	"name": "talesofcultivation",
+	"version": "1.0.0",
+	"description": "수선전",
+	"private": true,
+	"main": "src/main.js",
+	"type": "module",
+	"scripts": {
+		"build": "node build.cjs web bundle talesofcultivation",
+		"deploy": "node build.cjs web deploy",
+		"bundle-deploy": "node build.cjs web bundle talesofcultivation && node build.cjs web deploy",
+		"tables": "node build.cjs data tables",
+		"tables-export": "node tools/json-to-xlsx.cjs"
+	},
+	"devDependencies": {
+		"xlsx": "^0.18.5"
+	}
+}

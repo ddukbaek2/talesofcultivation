@@ -1,7 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node build.cjs list)"
+      "Bash(node build.cjs list)",
+      "Bash(node build.cjs web bundle talesofcultivation)",
+      "Bash(node build.cjs web deploy)",
+      "Bash(echo \"---EXIT=$?---\")",
+      "Bash(python -c \"from fontTools.ttLib import TTFont; print\\('fonttools OK'\\)\")",
+      "Bash(python3 -c \"from fontTools.ttLib import TTFont; print\\('fonttools OK'\\)\")",
+      "Bash(npm ls *)",
+      "Bash(ttf2woff2)",
+      "Bash(sed -i 's/bold \\\\\\(\\\\${[^}]*}\\\\\\)px sans-serif/bold \\\\1px GyeonggiBatangBold/g; s/bold \\\\\\([0-9][0-9]*\\\\\\)px sans-serif/bold \\\\1px GyeonggiBatangBold/g' src/minigame/cardbattlegame.js src/minigame/mergegame.js)",
+      "Bash(sed -i 's/\\\\\\(\\\\${[^}]*}\\\\\\)px sans-serif/\\\\1px GyeonggiBatang/g; s/\\\\\\([0-9][0-9]*\\\\\\)px sans-serif/\\\\1px GyeonggiBatang/g' src/minigame/cardbattlegame.js src/minigame/mergegame.js)",
+      "Bash(npm install *)",
+      "Bash(node tools/json-to-xlsx.cjs)",
+      "Bash(node build.cjs data tables)",
+      "Bash(node -e ' *)"
     ]
   }
 }

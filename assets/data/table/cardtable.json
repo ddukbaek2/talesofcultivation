@@ -1,0 +1,150 @@
+[
+	{
+		"id": 11000001,
+		"displayName": "타격",
+		"description": "검기를 발해 6의 피해를 입힌다",
+		"color": "#aa3333",
+		"isSpecial": false,
+		"grade": 1,
+		"cost": 1,
+		"sect": 10000001,
+		"element": "metal",
+		"cardType": "attack",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 6
+			}
+		]
+	},
+	{
+		"id": 11000002,
+		"displayName": "방어",
+		"description": "검막을 펼쳐 5만큼 방어한다",
+		"color": "#3366aa",
+		"isSpecial": false,
+		"grade": 1,
+		"cost": 1,
+		"sect": 10000001,
+		"element": "earth",
+		"cardType": "defense",
+		"effects": [
+			{
+				"type": "block",
+				"value": 5
+			}
+		]
+	},
+	{
+		"id": 11000003,
+		"displayName": "분노",
+		"description": "노기를 끌어올려 6의 피해를 입힌다",
+		"color": "#aa4444",
+		"isSpecial": false,
+		"grade": 1,
+		"cost": 1,
+		"sect": 10000001,
+		"element": "fire",
+		"cardType": "attack",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 6
+			}
+		]
+	},
+	{
+		"id": 12000001,
+		"displayName": "강타",
+		"description": "검을 강하게 휘둘러 8의 피해를 입힌다",
+		"color": "#cc6633",
+		"isSpecial": true,
+		"grade": 2,
+		"cost": 2,
+		"sect": 10000001,
+		"element": "metal",
+		"cardType": "attack",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 8
+			}
+		]
+	},
+	{
+		"id": 12000002,
+		"displayName": "강철의 파도",
+		"description": "검기를 흩뿌려 5의 피해를 입히고 5만큼 방어한다",
+		"color": "#888899",
+		"isSpecial": true,
+		"grade": 2,
+		"cost": 2,
+		"sect": 10000001,
+		"element": "metal",
+		"cardType": "mixed",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 5
+			},
+			{
+				"type": "block",
+				"value": 5
+			}
+		]
+	},
+	{
+		"id": 12000003,
+		"displayName": "베어가르기",
+		"description": "단호히 베어 8의 피해를 입힌다",
+		"color": "#cc4488",
+		"isSpecial": true,
+		"grade": 2,
+		"cost": 2,
+		"sect": 10000001,
+		"element": "wind",
+		"cardType": "attack",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 8
+			}
+		]
+	},
+	{
+		"id": 12000004,
+		"displayName": "툭툭 털기",
+		"description": "심신을 가다듬어 8만큼 방어한다",
+		"color": "#3388aa",
+		"isSpecial": true,
+		"grade": 2,
+		"cost": 2,
+		"sect": 10000001,
+		"element": "earth",
+		"cardType": "defense",
+		"effects": [
+			{
+				"type": "block",
+				"value": 8
+			}
+		]
+	},
+	{
+		"id": 13000001,
+		"displayName": "자루 강타",
+		"description": "검자루로 내리쳐 9의 피해를 입힌다",
+		"color": "#995533",
+		"isSpecial": true,
+		"grade": 3,
+		"cost": 3,
+		"sect": 10000001,
+		"element": "metal",
+		"cardType": "attack",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 9
+			}
+		]
+	}
+]

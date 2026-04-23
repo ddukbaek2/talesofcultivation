@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 //==============================================================================
 // 통합 빌드 드라이버.
-// 루트 build-manifest.json 을 읽고 모든 플랫폼/엔트리의 빌드 로직을 하나의 진입점으로 실행.
+// 루트 buildmanifest.json 을 읽고 모든 플랫폼/엔트리의 빌드 로직을 하나의 진입점으로 실행.
 //
 // 사용법:
 //   node build.cjs <platform> <entry> [target] [extra]
@@ -21,10 +21,10 @@
 const fileSystem = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
-const { execSync } = childProcess;
 
 const projectRoot = __dirname;
-const manifestFilePath = path.resolve(projectRoot, "build-manifest.json");
+const manifestFilePath = path.resolve(projectRoot, "buildmanifest.json");
+const vanillaProjectModule = require(path.join(projectRoot, "libs", "vanilla.js", "tools", "project.cjs"));
 
 
 //==============================================================================
@@ -32,7 +32,7 @@ const manifestFilePath = path.resolve(projectRoot, "build-manifest.json");
 //==============================================================================
 function loadManifest() {
 	if (!fileSystem.existsSync(manifestFilePath)) {
-		throw new Error(`[manifest] build-manifest.json 을 찾을 수 없습니다: ${manifestFilePath}`);
+		throw new Error(`[manifest] buildmanifest.json 을 찾을 수 없습니다: ${manifestFilePath}`);
 	}
 	const manifestText = fileSystem.readFileSync(manifestFilePath, "utf8");
 	return JSON.parse(manifestText);
@@ -88,59 +88,35 @@ function removeDirectory(targetPath) {
 //==============================================================================
 // WEB 플랫폼.
 //==============================================================================
-function webBundle(target) {
+async function webBundle(target) {
 	if (!target) {
 		console.error("[web:bundle] 타깃 이름이 필요합니다.");
 		process.exit(1);
 	}
 	const targetDefinition = getTargetDefinition(target);
-
-	const outputDirectory = path.join(projectRoot, "build", "web", target);
-	console.log(`[web:bundle] 시작: ${target} -> ${outputDirectory}`);
-
-	removeDirectory(outputDirectory);
-	fileSystem.mkdirSync(outputDirectory, { recursive: true });
-
-	// 템플릿 복사.
-	const templateSourceDirectory = path.join(projectRoot, "libs", "vanilla.js", "tools", "buildtemplate");
-	if (fileSystem.existsSync(templateSourceDirectory)) {
-		copyDirectoryRecursive(templateSourceDirectory, outputDirectory, null);
-	}
-
-	// 자산 전체 복사.
-	const assetsSourceDirectory = path.join(projectRoot, "assets");
-	const assetsDestinationDirectory = path.join(outputDirectory, "assets");
-	if (fileSystem.existsSync(assetsSourceDirectory)) {
-		copyDirectoryRecursive(assetsSourceDirectory, assetsDestinationDirectory, null);
-	}
-
-	// esbuild 번들.
 	const entryRelativePath = targetDefinition.entry;
 	if (!entryRelativePath) {
 		console.error(`[web:bundle] 타깃 정의에 entry 필드가 없습니다: ${target}`);
 		process.exit(1);
 	}
-	const entryFilePath = path.resolve(projectRoot, entryRelativePath);
-	const bundleDestinationPath = path.join(outputDirectory, "js", "bundle.min.js");
-	if (!fileSystem.existsSync(entryFilePath)) {
-		console.error(`[web:bundle] 진입 파일 없음: ${entryFilePath}`);
-		process.exit(1);
-	}
-	fileSystem.mkdirSync(path.dirname(bundleDestinationPath), { recursive: true });
-	const esbuildCommandLine = `esbuild ${entryFilePath} --bundle --outfile=${bundleDestinationPath} --format=iife --minify`;
-	console.log(`[web:bundle] esbuild 실행: ${esbuildCommandLine}`);
-	execSync(esbuildCommandLine, { stdio: "inherit" });
+
+	const outputDirectory = path.join(projectRoot, "build", "web");
+	console.log(`[web:bundle] 시작: ${target} -> ${outputDirectory}`);
+
+	// vanilla.js project.cjs 의 build 에 위임.
+	// (buildtemplate 복사 + assets 전체 복사 + esbuild 번들 → ./js/bundle.min.js)
+	await vanillaProjectModule.build(entryRelativePath, projectRoot, outputDirectory);
 
 	console.log(`[web:bundle] 완료: ${outputDirectory}`);
 }
 
-function webBundleAll() {
+async function webBundleAll() {
 	const manifest = loadManifest();
 	let failCount = 0;
 	for (const targetEntry of manifest.targets) {
 		console.log(`\n========== ${targetEntry.name} ==========`);
 		try {
-			webBundle(targetEntry.name);
+			await webBundle(targetEntry.name);
 		}
 		catch (error) {
 			console.error(`[web:bundle-all] 실패: ${targetEntry.name}`, error.message);
@@ -153,46 +129,51 @@ function webBundleAll() {
 	}
 }
 
-function webDeploy(target) {
+function webDeploy() {
 	const buildDirectory = path.join(projectRoot, "build", "web");
-	const deployRoot = getWebDeployRoot();
+	let deployRoot;
+	try {
+		deployRoot = getWebDeployRoot();
+	}
+	catch (error) {
+		console.warn(`[web:deploy] 디플로이만 실패: ${error.message}`);
+		return;
+	}
 
 	if (!fileSystem.existsSync(buildDirectory)) {
-		console.error(`[web:deploy] build 디렉토리가 없습니다: ${buildDirectory}`);
-		process.exit(1);
+		console.warn(`[web:deploy] 디플로이만 실패: build 디렉토리가 없습니다 (${buildDirectory}). 빌드는 정상.`);
+		return;
 	}
 	if (!fileSystem.existsSync(deployRoot)) {
-		console.error(`[web:deploy] 배포 대상 디렉토리에 접근할 수 없습니다: ${deployRoot}`);
-		process.exit(1);
+		console.warn(`[web:deploy] 디플로이만 실패: 배포 대상 디렉토리에 접근할 수 없습니다 (${deployRoot}). NAS 연결 상태를 확인하세요. 빌드는 정상.`);
+		return;
 	}
 
-	let targetDirectoryNames;
-	if (target) {
-		const sourceDirectory = path.join(buildDirectory, target);
-		if (!fileSystem.existsSync(sourceDirectory) || !fileSystem.statSync(sourceDirectory).isDirectory()) {
-			console.error(`[web:deploy] 배포 대상 타깃 폴더가 없습니다: ${sourceDirectory}`);
-			process.exit(1);
+	console.log(`[web:deploy] ${buildDirectory} -> ${deployRoot}`);
+
+	try {
+		// deployRoot 자체는 보존하고 그 안의 항목만 모두 제거 (NAS 마운트 폴더 보호).
+		const existingEntries = fileSystem.readdirSync(deployRoot, { withFileTypes: true });
+		for (const existingEntry of existingEntries) {
+			const existingEntryPath = path.join(deployRoot, existingEntry.name);
+			if (existingEntry.isDirectory()) {
+				removeDirectory(existingEntryPath);
+			}
+			else {
+				fileSystem.rmSync(existingEntryPath, { force: true });
+			}
 		}
-		targetDirectoryNames = [target];
-	}
-	else {
-		const entries = fileSystem.readdirSync(buildDirectory, { withFileTypes: true });
-		targetDirectoryNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-	}
 
-	console.log(`[web:deploy] ${buildDirectory} -> ${deployRoot} (${targetDirectoryNames.length}개)`);
-	for (const directoryName of targetDirectoryNames) {
-		const sourceDirectory = path.join(buildDirectory, directoryName);
-		const destinationDirectory = path.join(deployRoot, directoryName);
-		removeDirectory(destinationDirectory);
-		copyDirectoryRecursive(sourceDirectory, destinationDirectory, null);
-		console.log(`  ${directoryName}: ${sourceDirectory} -> ${destinationDirectory}`);
+		// build/web 의 모든 항목을 deployRoot 로 복사.
+		copyDirectoryRecursive(buildDirectory, deployRoot, null);
+		console.log(`[web:deploy] 완료.`);
 	}
-	console.log(`[web:deploy] 완료.`);
+	catch (error) {
+		console.warn(`[web:deploy] 디플로이만 실패: ${error.message}. 빌드는 정상.`);
+	}
 }
 
 function webCheck() {
-	const vanillaProjectModule = require(path.join(projectRoot, "libs", "vanilla.js", "tools", "project.cjs"));
 	vanillaProjectModule.check(projectRoot).catch((error) => {
 		console.error("[web:check] 오류:", error);
 		process.exit(1);
@@ -299,17 +280,18 @@ function printUsage() {
 	console.log("예시:");
 	console.log("  node build.cjs web bundle talesofcultivation");
 	console.log("  node build.cjs web bundle-all");
-	console.log("  node build.cjs web deploy talesofcultivation");
+	console.log("  node build.cjs web deploy");
 	console.log("  node build.cjs web check");
+	console.log("  node build.cjs data tables   (xlsx → json 변환)");
 	console.log("  node build.cjs utility check-syntax");
 }
 
 const BUILD_ENTRY_LIST = [
 	{ platform: "web", entry: "bundle", requiresTarget: true },
 	{ platform: "web", entry: "bundle-all", requiresTarget: false },
-	{ platform: "web", entry: "deploy", requiresTarget: true },
-	{ platform: "web", entry: "deploy-all", requiresTarget: false },
+	{ platform: "web", entry: "deploy", requiresTarget: false },
 	{ platform: "web", entry: "check", requiresTarget: false },
+	{ platform: "data", entry: "tables", requiresTarget: false },
 	{ platform: "utility", entry: "check-syntax", requiresTarget: false },
 	{ platform: "utility", entry: "convert-quotes", requiresTarget: false },
 ];
@@ -328,27 +310,28 @@ function printEntries() {
 	}
 }
 
-function dispatch(platform, entry, rest) {
+async function dispatch(platform, entry, rest) {
 	const key = `${platform}:${entry}`;
 	switch (key) {
 		case "web:bundle": {
-			webBundle(rest[0]);
+			await webBundle(rest[0]);
 			break;
 		}
 		case "web:bundle-all": {
-			webBundleAll();
+			await webBundleAll();
 			break;
 		}
 		case "web:deploy": {
-			webDeploy(rest[0] || null);
-			break;
-		}
-		case "web:deploy-all": {
-			webDeploy(null);
+			webDeploy();
 			break;
 		}
 		case "web:check": {
 			webCheck();
+			break;
+		}
+		case "data:tables": {
+			const xlsxToJsonModule = require(path.join(projectRoot, "tools", "xlsx-to-json.cjs"));
+			xlsxToJsonModule.convertAllTables(projectRoot);
 			break;
 		}
 		case "utility:check-syntax": {
@@ -367,7 +350,7 @@ function dispatch(platform, entry, rest) {
 	}
 }
 
-function main() {
+async function main() {
 	const args = process.argv.slice(2);
 	if (args.length === 0) {
 		printUsage();
@@ -382,8 +365,11 @@ function main() {
 		process.exit(1);
 	}
 	const [platform, entry, ...rest] = args;
-	dispatch(platform, entry, rest);
+	await dispatch(platform, entry, rest);
 }
 
 
-main();
+main().catch((error) => {
+	console.error(error);
+	process.exit(1);
+});
