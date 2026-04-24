@@ -5,9 +5,8 @@ import { Object } from "../../libs/vanilla.js/src/base/object.js";
 
 
 //==============================================================================
-// 경지 테이블 한 행의 데이터 구조체 (realmtable.json 의 각 객체에 대응).
-// 수선자의 등급/수준을 나타낸다 (범인 < 연기기 < 결단기 < 원영기 < 화신기 ...).
-// rank 가 작을수록 낮은 단계.
+// RealmTableData (realmtable.json 의 한 객체에 대응). xlsx-to-classes 가 자동 생성.
+// 수동 편집 금지 — xlsx 의 컬럼/타입을 바꾼 뒤 "data classes" 를 다시 실행할 것.
 //==============================================================================
 export class RealmTableData extends Object {
 	//==============================================================================
@@ -26,7 +25,7 @@ export class RealmTableData extends Object {
 	 */
 	constructor(data) {
 		super();
-		this.id = data.id;
+		this.id = typeof data.id === "number" ? data.id : 0;
 		this.rank = typeof data.rank === "number" ? data.rank : 0;
 		this.name = data.name || "";
 		this.description = data.description || "";

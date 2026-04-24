@@ -33,6 +33,9 @@ const END_TURN_BUTTON_HEIGHT = 40;
 const HAND_BOTTOM_MARGIN = 20;
 const PICKED_CARD_SCALE = 1.3;
 const PICKED_CARD_LIFT = 40;
+const SELECTION_TWEEN_SPEED = 8.0; // 1초당 0→1 8회 (≈0.125초). 큰 값일수록 빠르게.
+const FLOATING_TEXT_DURATION = 0.9;
+const FLOATING_TEXT_RISE = 60;
 
 // 부채꼴 (플레이어 손패).
 const FAN_ARC_RADIUS = 540;
@@ -46,16 +49,11 @@ const BUFFS_PER_ROW = 6;
 
 
 //==============================================================================
-// 등급별 카드 배경색 (cost 원의 배경).
+// 룩업 기본값 (테이블이 주입되기 전, 또는 정의가 누락된 경우 fallback).
 //==============================================================================
-const GRADE_COLORS = [
-	"#ffffff", // 1 일반    흰
-	"#33cc33", // 2 고급    녹
-	"#3388ff", // 3 희귀    파
-	"#cc3333", // 4 영웅    빨
-	"#9933cc", // 5 전설    보라
-	"#ffcc00", // 6 신화    황금
-];
+const DEFAULT_GRADE_COLOR = "#cccccc";
+const DEFAULT_SECT_BACK_COLOR = "#3a3a55";
+const DEFAULT_SECT_EMBLEM_COLOR = "#5a5a8a";
 
 
 //==============================================================================
@@ -68,20 +66,6 @@ const PlayerSide = System.Object.freeze({
 
 
 //==============================================================================
-// 버프 정의.
-// - isTurnTemporary: 자기 턴 시작 시 자동 제거 (block 등).
-// - decayPerTurn: 자기 턴 시작 시 value 1 감소 (weaken/vulnerable 등).
-//==============================================================================
-const BuffDefinitions = {
-	block:      { displayName: "방어",   color: "#4488cc", icon: "방", description: "받는 피해를 흡수한다",          isTurnTemporary: true,  decayPerTurn: false },
-	strength:   { displayName: "힘",     color: "#cc4444", icon: "력", description: "내가 가하는 피해가 늘어난다",     isTurnTemporary: false, decayPerTurn: false },
-	dexterity:  { displayName: "민첩",   color: "#44cc88", icon: "민", description: "내가 펼치는 방어가 늘어난다",     isTurnTemporary: false, decayPerTurn: false },
-	weaken:     { displayName: "약화",   color: "#aa55cc", icon: "약", description: "내가 가하는 피해가 줄어든다",     isTurnTemporary: false, decayPerTurn: true  },
-	vulnerable: { displayName: "취약",   color: "#cc8844", icon: "취", description: "받는 피해가 늘어난다",            isTurnTemporary: false, decayPerTurn: true  },
-};
-
-
-//==============================================================================
 // 카드 인스턴스. cardId 는 외부 데이터 (cardtable.json) 의 카드 식별자.
 //==============================================================================
 class Card {
@@ -91,6 +75,7 @@ class Card {
 	/** @type { number } */ id;
 	/** @type { string } */ cardId;
 	/** @type { number } */ enterTime;
+	/** @type { number } */ selectionProgress;
 
 	//==============================================================================
 	// 생성.
@@ -99,6 +84,7 @@ class Card {
 		this.id = id;
 		this.cardId = cardId;
 		this.enterTime = 0;
+		this.selectionProgress = 0;
 	}
 }
 
@@ -145,6 +131,9 @@ export class CardBattleGame {
 	// 멤버 변수 목록.
 	//==============================================================================
 	/** @private @type { Array | null } */ #cardDefinitions;
+	/** @private @type { Array | null } */ #gradeDefinitions;
+	/** @private @type { Array | null } */ #sectDefinitions;
+	/** @private @type { Array | null } */ #buffDefinitions;
 	/** @private @type { PlayerState } */ #player;
 	/** @private @type { PlayerState } */ #opponent;
 	/** @private @type { string } */ #currentSide;
@@ -163,12 +152,20 @@ export class CardBattleGame {
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #playerPortraitRect;
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #opponentPortraitRect;
 	/** @private @type { { side: string, buff: { id: string, value: number } } | null } */ #pressedBuffInfo;
+	/** @private @type { { x: number, y: number } | null } */ #playerDeckSlotCenter;
+	/** @private @type { { x: number, y: number } | null } */ #playerDiscardSlotCenter;
+	/** @private @type { { x: number, y: number } | null } */ #opponentDeckSlotCenter;
+	/** @private @type { { x: number, y: number } | null } */ #opponentDiscardSlotCenter;
+	/** @private @type { Array<{ text: string, color: string, x: number, y: number, time: number }> } */ #floatingTexts;
 
 	//==============================================================================
 	// 생성.
 	//==============================================================================
 	constructor() {
 		this.#cardDefinitions = null;
+		this.#gradeDefinitions = null;
+		this.#sectDefinitions = null;
+		this.#buffDefinitions = null;
 		this.#player = new PlayerState(PlayerSide.player);
 		this.#opponent = new PlayerState(PlayerSide.opponent);
 		this.#currentSide = PlayerSide.player;
@@ -187,6 +184,11 @@ export class CardBattleGame {
 		this.#playerPortraitRect = null;
 		this.#opponentPortraitRect = null;
 		this.#pressedBuffInfo = null;
+		this.#playerDeckSlotCenter = null;
+		this.#playerDiscardSlotCenter = null;
+		this.#opponentDeckSlotCenter = null;
+		this.#opponentDiscardSlotCenter = null;
+		this.#floatingTexts = [];
 	}
 
 	//==============================================================================
@@ -198,6 +200,75 @@ export class CardBattleGame {
 	setCardDefinitions(cardDefinitions) {
 		this.#cardDefinitions = cardDefinitions;
 		this.reset();
+	}
+
+	//==============================================================================
+	// 등급 / 종파 / 버프 정의 주입.
+	//==============================================================================
+	/**
+	 * @param { Array } gradeDefinitions
+	 */
+	setGradeDefinitions(gradeDefinitions) {
+		this.#gradeDefinitions = gradeDefinitions;
+	}
+
+	/**
+	 * @param { Array } sectDefinitions
+	 */
+	setSectDefinitions(sectDefinitions) {
+		this.#sectDefinitions = sectDefinitions;
+	}
+
+	/**
+	 * @param { Array } buffDefinitions
+	 */
+	setBuffDefinitions(buffDefinitions) {
+		this.#buffDefinitions = buffDefinitions;
+	}
+
+	//==============================================================================
+	// 등급 정의 (rank 1~6) 검색.
+	//==============================================================================
+	/**
+	 * @param { number } rank
+	 * @returns { Object | null }
+	 */
+	findGradeDefinition(rank) {
+		if (this.#gradeDefinitions === null) {
+			return null;
+		}
+		const found = this.#gradeDefinitions.find((g) => g.rank === rank);
+		return found ? found : null;
+	}
+
+	//==============================================================================
+	// 종파 정의 (id) 검색.
+	//==============================================================================
+	/**
+	 * @param { number } sectId
+	 * @returns { Object | null }
+	 */
+	findSectDefinition(sectId) {
+		if (this.#sectDefinitions === null) {
+			return null;
+		}
+		const found = this.#sectDefinitions.find((s) => s.id === sectId);
+		return found ? found : null;
+	}
+
+	//==============================================================================
+	// 버프 정의 (id 문자열) 검색.
+	//==============================================================================
+	/**
+	 * @param { string } buffId
+	 * @returns { Object | null }
+	 */
+	findBuffDefinition(buffId) {
+		if (this.#buffDefinitions === null) {
+			return null;
+		}
+		const found = this.#buffDefinitions.find((b) => b.id === buffId);
+		return found ? found : null;
 	}
 
 	//==============================================================================
@@ -222,6 +293,11 @@ export class CardBattleGame {
 		this.#playerPortraitRect = null;
 		this.#opponentPortraitRect = null;
 		this.#pressedBuffInfo = null;
+		this.#playerDeckSlotCenter = null;
+		this.#playerDiscardSlotCenter = null;
+		this.#opponentDeckSlotCenter = null;
+		this.#opponentDiscardSlotCenter = null;
+		this.#floatingTexts = [];
 		this.#player.deck = this.createRandomDeck();
 		this.#opponent.deck = this.createRandomDeck();
 		for (let i = 0; i < STARTING_HAND_SIZE; ++i) {
@@ -527,7 +603,7 @@ export class CardBattleGame {
 	startTurn(playerState) {
 		// 일시 버프 (block 등) 제거.
 		playerState.buffs = playerState.buffs.filter((b) => {
-			const definition = BuffDefinitions[b.id];
+			const definition = this.findBuffDefinition(b.id);
 			if (definition && definition.isTurnTemporary) {
 				return false;
 			}
@@ -535,7 +611,7 @@ export class CardBattleGame {
 		});
 		// 감쇠 버프 (weaken / vulnerable) value -1, 0 되면 제거.
 		for (const buff of playerState.buffs) {
-			const definition = BuffDefinitions[buff.id];
+			const definition = this.findBuffDefinition(buff.id);
 			if (definition && definition.decayPerTurn) {
 				buff.value -= 1;
 			}
@@ -573,6 +649,16 @@ export class CardBattleGame {
 					card.enterTime = 0;
 				}
 			}
+			// 선택 트윈: 선택 상태면 1, 아니면 0 으로 보간.
+			const targetSelection = card.id === this.#selectedCardId ? 1 : 0;
+			const diff = targetSelection - card.selectionProgress;
+			const step = SELECTION_TWEEN_SPEED * timeDelta;
+			if (System.Math.abs(diff) <= step) {
+				card.selectionProgress = targetSelection;
+			}
+			else {
+				card.selectionProgress += System.Math.sign(diff) * step;
+			}
 		}
 		for (const card of this.#opponent.hand) {
 			if (card.enterTime > 0) {
@@ -594,6 +680,26 @@ export class CardBattleGame {
 				this.#opponentExitingCards.splice(i, 1);
 			}
 		}
+		// 플로팅 텍스트 시간 감소.
+		for (let i = this.#floatingTexts.length - 1; i >= 0; --i) {
+			this.#floatingTexts[i].time -= timeDelta;
+			if (this.#floatingTexts[i].time <= 0) {
+				this.#floatingTexts.splice(i, 1);
+			}
+		}
+	}
+
+	//==============================================================================
+	// 플로팅 텍스트 추가.
+	//==============================================================================
+	/**
+	 * @param { string } text
+	 * @param { string } color
+	 * @param { number } x
+	 * @param { number } y
+	 */
+	addFloatingText(text, color, x, y) {
+		this.#floatingTexts.push({ text: text, color: color, x: x, y: y, time: FLOATING_TEXT_DURATION });
 	}
 
 	//==============================================================================
@@ -674,10 +780,11 @@ export class CardBattleGame {
 			}
 		}
 
-		// 누른 상태 유지 중: 카드 영역 벗어나면 즉시 취소.
+		// 누른 상태 유지 중: 카드 영역 벗어나면 즉시 취소 + 플로팅 피드백.
 		if (this.#selectedCardId !== null && !inputManager.isTouchReleased()) {
 			const selectedLayout = this.#playerHandLayouts.find((entry) => entry.card.id === this.#selectedCardId);
 			if (selectedLayout && !this.isInsideHandCard(viewInputPosition, selectedLayout)) {
+				this.addFloatingText("취소", "#aaaaaa", viewInputPosition.x, viewInputPosition.y);
 				this.#selectedCardId = null;
 			}
 		}
@@ -688,7 +795,16 @@ export class CardBattleGame {
 				const selectedCard = this.#player.hand.find((c) => c.id === this.#selectedCardId);
 				const selectedLayout = this.#playerHandLayouts.find((entry) => entry.card.id === this.#selectedCardId);
 				if (selectedCard && selectedLayout && this.isInsideHandCard(viewInputPosition, selectedLayout)) {
-					this.playCard(this.#player, this.#opponent, selectedCard);
+					const success = this.playCard(this.#player, this.#opponent, selectedCard);
+					if (success) {
+						this.addFloatingText("사용!", "#5cff7c", selectedLayout.centerX, selectedLayout.centerY);
+					}
+					else {
+						this.addFloatingText("영력 부족", "#ff6060", selectedLayout.centerX, selectedLayout.centerY);
+					}
+				}
+				else {
+					this.addFloatingText("취소", "#aaaaaa", viewInputPosition.x, viewInputPosition.y);
 				}
 				this.#selectedCardId = null;
 			}
@@ -781,8 +897,12 @@ export class CardBattleGame {
 		const opponentCardCenterY = opponentHandTopY + OPPONENT_CARD_HEIGHT * 0.5;
 		this.drawOpponentHand(canvasRenderingContext, popupRect, opponentCardCenterY);
 		const opponentSlotY = opponentHandTopY + (OPPONENT_CARD_HEIGHT - SLOT_HEIGHT) * 0.5;
-		this.drawPileSlot(canvasRenderingContext, popupRect.x + SIDE_MARGIN, opponentSlotY, "무덤", this.#opponent.discard.length);
-		this.drawPileSlot(canvasRenderingContext, popupRect.x + popupRect.width - SIDE_MARGIN - SLOT_WIDTH, opponentSlotY, "저물대", this.#opponent.deck.length);
+		const opponentDiscardX = popupRect.x + SIDE_MARGIN;
+		const opponentDeckX = popupRect.x + popupRect.width - SIDE_MARGIN - SLOT_WIDTH;
+		this.drawPileSlot(canvasRenderingContext, opponentDiscardX, opponentSlotY, "무덤", this.#opponent.discard.length);
+		this.drawPileSlot(canvasRenderingContext, opponentDeckX, opponentSlotY, "저물대", this.#opponent.deck.length);
+		this.#opponentDiscardSlotCenter = { x: opponentDiscardX + SLOT_WIDTH * 0.5, y: opponentSlotY + SLOT_HEIGHT * 0.5 };
+		this.#opponentDeckSlotCenter = { x: opponentDeckX + SLOT_WIDTH * 0.5, y: opponentSlotY + SLOT_HEIGHT * 0.5 };
 
 		// 적 초상화 (우측 상단).
 		const opponentPortraitX = popupRect.x + popupRect.width - PORTRAIT_WIDTH - SIDE_MARGIN;
@@ -792,9 +912,12 @@ export class CardBattleGame {
 		// 플레이어 손패 라인 + 무덤/덱.
 		const playerHandLineY = popupRect.y + popupRect.height - HAND_BOTTOM_MARGIN - PLAYER_CARD_HEIGHT * 0.5;
 		const playerSlotY = playerHandLineY - SLOT_HEIGHT * 0.5;
-		this.drawPileSlot(canvasRenderingContext, popupRect.x + SIDE_MARGIN, playerSlotY, "무덤", this.#player.discard.length);
+		const playerDiscardX = popupRect.x + SIDE_MARGIN;
+		this.drawPileSlot(canvasRenderingContext, playerDiscardX, playerSlotY, "무덤", this.#player.discard.length);
 		const playerDeckX = popupRect.x + popupRect.width - SIDE_MARGIN - SLOT_WIDTH;
 		this.drawPileSlot(canvasRenderingContext, playerDeckX, playerSlotY, "저물대", this.#player.deck.length);
+		this.#playerDiscardSlotCenter = { x: playerDiscardX + SLOT_WIDTH * 0.5, y: playerSlotY + SLOT_HEIGHT * 0.5 };
+		this.#playerDeckSlotCenter = { x: playerDeckX + SLOT_WIDTH * 0.5, y: playerSlotY + SLOT_HEIGHT * 0.5 };
 
 		// 턴종료 버튼 (덱 위, 항상 표시. 비활성화 시 회색).
 		const endTurnButtonX = playerDeckX + (SLOT_WIDTH - END_TURN_BUTTON_WIDTH) * 0.5;
@@ -837,6 +960,9 @@ export class CardBattleGame {
 				this.drawSelectedCardTooltip(canvasRenderingContext, selectedLayout, popupRect);
 			}
 		}
+
+		// 플로팅 텍스트 (사용/취소/영력 부족 등 행동 피드백).
+		this.drawFloatingTexts(canvasRenderingContext);
 
 		// 종료 오버레이.
 		if (this.#endGameMessage !== "") {
@@ -919,14 +1045,14 @@ export class CardBattleGame {
 		canvasRenderingContext.textBaseline = "middle";
 		canvasRenderingContext.fillText(`${playerState.health}`, textX + textWidth * 0.5, healthBarY + barHeight * 0.5);
 
-		// 영력바 (체력바와 동일 — 배경 + current 비율만 채움. maxEnergy 는 텍스트로만 표시).
+		// 영력바 (체력바와 동일 모양, 파란색).
 		const energyBarY = healthBarY + barHeight + 6;
-		canvasRenderingContext.fillStyle = "#221100";
+		canvasRenderingContext.fillStyle = "#112233";
 		canvasRenderingContext.fillRect(textX, energyBarY, textWidth, barHeight);
 		// maxEnergy 기준 비율 (1/1 이면 100%). maxEnergy 0 이면 빈 게이지.
 		const energyRatio = playerState.maxEnergy > 0 ? playerState.currentEnergy / playerState.maxEnergy : 0;
 		const clampedEnergyRatio = System.Math.max(0, System.Math.min(1, energyRatio));
-		canvasRenderingContext.fillStyle = "#ffcc33";
+		canvasRenderingContext.fillStyle = "#3388ee";
 		canvasRenderingContext.fillRect(textX, energyBarY, textWidth * clampedEnergyRatio, barHeight);
 		canvasRenderingContext.strokeStyle = "#ffffff";
 		canvasRenderingContext.lineWidth = 1;
@@ -973,7 +1099,7 @@ export class CardBattleGame {
 		}
 		for (let i = 0; i < buffs.length; ++i) {
 			const buff = buffs[i];
-			const definition = BuffDefinitions[buff.id] || { displayName: buff.id, color: "#888888", icon: "?" };
+			const definition = this.findBuffDefinition(buff.id) || { displayName: buff.id, color: "#888888", icon: "?" };
 			const row = System.Math.floor(i / BUFFS_PER_ROW);
 			const column = i % BUFFS_PER_ROW;
 			const buffX = x + column * (BUFF_ICON_SIZE + BUFF_ICON_GAP);
@@ -1042,7 +1168,7 @@ export class CardBattleGame {
 		canvasRenderingContext.font = "11px GyeonggiBatang";
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "top";
-		canvasRenderingContext.fillText("로그", x + 8, y + 6);
+		canvasRenderingContext.fillText("전투 기록", x + 8, y + 6);
 
 		canvasRenderingContext.fillStyle = "#dddddd";
 		canvasRenderingContext.font = "12px GyeonggiBatang";
@@ -1101,29 +1227,30 @@ export class CardBattleGame {
 		for (let i = 0; i < handCount; ++i) {
 			const card = this.#player.hand[i];
 			const fanLayout = this.computeFanCardLayout(i, handCount, popupCenterX, popupBottomY);
-			const isSelected = card.id === this.#selectedCardId;
+			// 선택 트윈 보간 (0=부채꼴, 1=픽업).
+			const sp = card.selectionProgress;
 			const layoutEntry = {
 				card: card,
 				centerX: fanLayout.centerX,
-				centerY: isSelected ? fanLayout.centerY - PICKED_CARD_LIFT : fanLayout.centerY,
-				rotation: isSelected ? 0 : fanLayout.rotation,
-				scale: isSelected ? PICKED_CARD_SCALE : 1,
+				centerY: fanLayout.centerY - PICKED_CARD_LIFT * sp,
+				rotation: fanLayout.rotation * (1 - sp),
+				scale: 1 + (PICKED_CARD_SCALE - 1) * sp,
 			};
 			allLayouts.push(layoutEntry);
 			this.#playerHandLayouts.push(layoutEntry);
 		}
 
-		// 좌(인덱스 작음) → 우 (인덱스 큼) 순서로 그림 → 우측이 위에 쌓인다.
+		// 좌(인덱스 작음) → 우 (인덱스 큼) 순서로 그림. 선택 진행 중인 카드는 맨 위로.
 		for (const layoutEntry of allLayouts) {
-			if (layoutEntry.card.id === this.#selectedCardId) {
+			if (layoutEntry.card.selectionProgress > 0) {
 				continue;
 			}
 			this.drawHandCard(canvasRenderingContext, layoutEntry);
 		}
-		// 선택된 카드는 맨 위.
-		const selectedEntry = allLayouts.find((entry) => entry.card.id === this.#selectedCardId);
-		if (selectedEntry) {
-			this.drawHandCard(canvasRenderingContext, selectedEntry);
+		for (const layoutEntry of allLayouts) {
+			if (layoutEntry.card.selectionProgress > 0) {
+				this.drawHandCard(canvasRenderingContext, layoutEntry);
+			}
 		}
 	}
 
@@ -1136,10 +1263,22 @@ export class CardBattleGame {
 	 */
 	drawHandCard(canvasRenderingContext, layoutEntry) {
 		const card = layoutEntry.card;
-		const enterAnimation = this.computeEnterAnimation(card, false);
+		// 진입 애니메이션: 덱 슬롯 위치에서 부채꼴 위치로 보간.
+		let drawCenterX = layoutEntry.centerX;
+		let drawCenterY = layoutEntry.centerY;
+		let drawRotation = layoutEntry.rotation;
+		let alpha = 1;
+		if (card.enterTime > 0 && this.#playerDeckSlotCenter) {
+			const progress = 1 - card.enterTime / ENTER_DURATION;
+			const eased = this.easeOutCubic(progress);
+			drawCenterX = this.lerp(this.#playerDeckSlotCenter.x, layoutEntry.centerX, eased);
+			drawCenterY = this.lerp(this.#playerDeckSlotCenter.y, layoutEntry.centerY, eased);
+			drawRotation = layoutEntry.rotation * eased;
+			alpha = progress;
+		}
 		canvasRenderingContext.save();
-		canvasRenderingContext.translate(layoutEntry.centerX, layoutEntry.centerY + enterAnimation.yOffset);
-		canvasRenderingContext.rotate(layoutEntry.rotation);
+		canvasRenderingContext.translate(drawCenterX, drawCenterY);
+		canvasRenderingContext.rotate(drawRotation);
 		canvasRenderingContext.scale(layoutEntry.scale, layoutEntry.scale);
 		const localLayout = {
 			x: -PLAYER_CARD_WIDTH * 0.5,
@@ -1147,7 +1286,11 @@ export class CardBattleGame {
 			width: PLAYER_CARD_WIDTH,
 			height: PLAYER_CARD_HEIGHT,
 		};
-		this.drawCard(canvasRenderingContext, card, localLayout, enterAnimation.alpha, false);
+		// 영력 부족 여부 (현재 영력 < 카드 cost) → cost 원 빨간색으로 강조.
+		const definition = this.findCardDefinition(card.cardId);
+		const cost = definition && typeof definition.cost === "number" ? definition.cost : 0;
+		const isAffordable = this.#player.currentEnergy >= cost;
+		this.drawCard(canvasRenderingContext, card, localLayout, alpha, false, isAffordable);
 		canvasRenderingContext.restore();
 	}
 
@@ -1191,17 +1334,29 @@ export class CardBattleGame {
 		for (let i = 0; i < handCount; ++i) {
 			const card = this.#opponent.hand[i];
 			const fanLayout = this.computeOpponentFanCardLayout(i, handCount, popupCenterX, cardCenterY);
-			const enterAnimation = this.computeEnterAnimation(card, true);
+			// 진입 보간: 적 덱 슬롯 → 부채꼴 위치.
+			let drawCenterX = fanLayout.centerX;
+			let drawCenterY = fanLayout.centerY;
+			let drawRotation = fanLayout.rotation;
+			let alpha = 1;
+			if (card.enterTime > 0 && this.#opponentDeckSlotCenter) {
+				const progress = 1 - card.enterTime / ENTER_DURATION;
+				const eased = this.easeOutCubic(progress);
+				drawCenterX = this.lerp(this.#opponentDeckSlotCenter.x, fanLayout.centerX, eased);
+				drawCenterY = this.lerp(this.#opponentDeckSlotCenter.y, fanLayout.centerY, eased);
+				drawRotation = fanLayout.rotation * eased;
+				alpha = progress;
+			}
 			canvasRenderingContext.save();
-			canvasRenderingContext.translate(fanLayout.centerX, fanLayout.centerY + enterAnimation.yOffset);
-			canvasRenderingContext.rotate(fanLayout.rotation);
+			canvasRenderingContext.translate(drawCenterX, drawCenterY);
+			canvasRenderingContext.rotate(drawRotation);
 			const localLayout = {
 				x: -OPPONENT_CARD_WIDTH * 0.5,
 				y: -OPPONENT_CARD_HEIGHT * 0.5,
 				width: OPPONENT_CARD_WIDTH,
 				height: OPPONENT_CARD_HEIGHT,
 			};
-			this.drawCard(canvasRenderingContext, card, localLayout, enterAnimation.alpha, true);
+			this.drawCard(canvasRenderingContext, card, localLayout, alpha, true);
 			canvasRenderingContext.restore();
 
 			// hit / exit 등록용 axis-aligned 사각형 (회전된 카드를 단순 사각형으로 근사).
@@ -1242,25 +1397,39 @@ export class CardBattleGame {
 	 * @param { CanvasRenderingContext2D } canvasRenderingContext
 	 */
 	drawExitingCards(canvasRenderingContext) {
+		// 플레이어: 손에서 무덤(좌측) 으로 이동.
 		for (const exitingEntry of this.#playerExitingCards) {
 			const progress = 1 - exitingEntry.exitTime / EXIT_DURATION;
-			const yOffset = -progress * 100;
-			const alpha = 1 - progress;
+			const eased = this.easeOutCubic(progress);
+			const sourceCenterX = exitingEntry.layout.x + exitingEntry.layout.width * 0.5;
+			const sourceCenterY = exitingEntry.layout.y + exitingEntry.layout.height * 0.5;
+			const targetCenterX = this.#playerDiscardSlotCenter ? this.#playerDiscardSlotCenter.x : sourceCenterX;
+			const targetCenterY = this.#playerDiscardSlotCenter ? this.#playerDiscardSlotCenter.y : sourceCenterY;
+			const drawCenterX = this.lerp(sourceCenterX, targetCenterX, eased);
+			const drawCenterY = this.lerp(sourceCenterY, targetCenterY, eased);
+			const alpha = 1 - progress * 0.85;
 			const drawLayout = {
-				x: exitingEntry.layout.x,
-				y: exitingEntry.layout.y + yOffset,
+				x: drawCenterX - exitingEntry.layout.width * 0.5,
+				y: drawCenterY - exitingEntry.layout.height * 0.5,
 				width: exitingEntry.layout.width,
 				height: exitingEntry.layout.height,
 			};
 			this.drawCard(canvasRenderingContext, exitingEntry.card, drawLayout, alpha, false);
 		}
+		// 적: 손에서 무덤(좌측) 으로.
 		for (const exitingEntry of this.#opponentExitingCards) {
 			const progress = 1 - exitingEntry.exitTime / EXIT_DURATION;
-			const yOffset = progress * 100;
-			const alpha = 1 - progress;
+			const eased = this.easeOutCubic(progress);
+			const sourceCenterX = exitingEntry.layout.x + exitingEntry.layout.width * 0.5;
+			const sourceCenterY = exitingEntry.layout.y + exitingEntry.layout.height * 0.5;
+			const targetCenterX = this.#opponentDiscardSlotCenter ? this.#opponentDiscardSlotCenter.x : sourceCenterX;
+			const targetCenterY = this.#opponentDiscardSlotCenter ? this.#opponentDiscardSlotCenter.y : sourceCenterY;
+			const drawCenterX = this.lerp(sourceCenterX, targetCenterX, eased);
+			const drawCenterY = this.lerp(sourceCenterY, targetCenterY, eased);
+			const alpha = 1 - progress * 0.85;
 			const drawLayout = {
-				x: exitingEntry.layout.x,
-				y: exitingEntry.layout.y + yOffset,
+				x: drawCenterX - exitingEntry.layout.width * 0.5,
+				y: drawCenterY - exitingEntry.layout.height * 0.5,
 				width: exitingEntry.layout.width,
 				height: exitingEntry.layout.height,
 			};
@@ -1279,16 +1448,25 @@ export class CardBattleGame {
 	 * @param { number } alpha
 	 * @param { boolean } isFaceDown
 	 */
-	drawCard(canvasRenderingContext, card, cardLayout, alpha, isFaceDown) {
+	drawCard(canvasRenderingContext, card, cardLayout, alpha, isFaceDown, isAffordable) {
+		if (typeof isAffordable !== "boolean") {
+			isAffordable = true;
+		}
 		canvasRenderingContext.save();
 		canvasRenderingContext.globalAlpha = alpha;
 		if (isFaceDown) {
-			canvasRenderingContext.fillStyle = "#3a3a55";
+			// 종파별 고유 뒷면색 (secttable.json 의 backColor / emblemColor).
+			const cardDefinition = this.findCardDefinition(card.cardId);
+			const sectId = cardDefinition && typeof cardDefinition.sect === "number" ? cardDefinition.sect : 0;
+			const sectDefinition = this.findSectDefinition(sectId);
+			const sectBackground = sectDefinition && sectDefinition.backColor ? sectDefinition.backColor : DEFAULT_SECT_BACK_COLOR;
+			const sectEmblem = sectDefinition && sectDefinition.emblemColor ? sectDefinition.emblemColor : DEFAULT_SECT_EMBLEM_COLOR;
+			canvasRenderingContext.fillStyle = sectBackground;
 			canvasRenderingContext.fillRect(cardLayout.x, cardLayout.y, cardLayout.width, cardLayout.height);
 			canvasRenderingContext.strokeStyle = "#ffffff";
 			canvasRenderingContext.lineWidth = 2;
 			canvasRenderingContext.strokeRect(cardLayout.x, cardLayout.y, cardLayout.width, cardLayout.height);
-			canvasRenderingContext.fillStyle = "#5a5a8a";
+			canvasRenderingContext.fillStyle = sectEmblem;
 			const centerX = cardLayout.x + cardLayout.width * 0.5;
 			const centerY = cardLayout.y + cardLayout.height * 0.5;
 			const halfDiamond = System.Math.min(cardLayout.width, cardLayout.height) * 0.25;
@@ -1307,7 +1485,8 @@ export class CardBattleGame {
 			const description = definition ? definition.description : "";
 			const cost = definition && typeof definition.cost === "number" ? definition.cost : 0;
 			const grade = definition && typeof definition.grade === "number" ? definition.grade : 1;
-			const gradeColor = GRADE_COLORS[grade - 1] || GRADE_COLORS[0];
+			const gradeDefinition = this.findGradeDefinition(grade);
+			const gradeColor = gradeDefinition && gradeDefinition.color ? gradeDefinition.color : DEFAULT_GRADE_COLOR;
 
 			// 1) 배경 + 외곽선 (클리핑 없음).
 			canvasRenderingContext.fillStyle = cardColor;
@@ -1360,17 +1539,20 @@ export class CardBattleGame {
 			canvasRenderingContext.restore();
 
 			// 4) 영력 cost 원 (좌상 모서리 외곽, 클리핑 영향 없음).
-			const costRadius = System.Math.max(11, System.Math.floor(cardLayout.width * 0.18));
+			//    영력 부족이면 빨간색으로 덮어 등급색보다 우선 강조.
+			const costRadius = System.Math.max(6, System.Math.floor(cardLayout.width * 0.09));
 			const costCenterX = cardLayout.x + costRadius * 0.3;
 			const costCenterY = cardLayout.y + costRadius * 0.3;
-			canvasRenderingContext.fillStyle = gradeColor;
+			const costFillColor = isAffordable ? gradeColor : "#cc2233";
+			const costStrokeColor = isAffordable ? "#222222" : "#660000";
+			canvasRenderingContext.fillStyle = costFillColor;
 			canvasRenderingContext.beginPath();
 			canvasRenderingContext.arc(costCenterX, costCenterY, costRadius, 0, System.Math.PI * 2);
 			canvasRenderingContext.fill();
-			canvasRenderingContext.strokeStyle = "#222222";
-			canvasRenderingContext.lineWidth = 1.5;
+			canvasRenderingContext.strokeStyle = costStrokeColor;
+			canvasRenderingContext.lineWidth = isAffordable ? 1.5 : 2;
 			canvasRenderingContext.stroke();
-			const isLightBg = grade === 1 || grade === 6;
+			const isLightBg = isAffordable && (grade === 1 || grade === 6);
 			canvasRenderingContext.fillStyle = isLightBg ? "#222222" : "#ffffff";
 			canvasRenderingContext.font = `bold ${costRadius + 2}px GyeonggiBatangBold`;
 			canvasRenderingContext.textAlign = "center";
@@ -1381,16 +1563,13 @@ export class CardBattleGame {
 	}
 
 	//==============================================================================
-	// 설명 한 줄을 글자 단위로 그리되 숫자 부분은 형광녹색으로 강조한다.
+	// 한 줄 텍스트를 숫자/비숫자 토큰으로 분할.
 	//==============================================================================
 	/**
-	 * @param { CanvasRenderingContext2D } canvasRenderingContext
 	 * @param { string } line
-	 * @param { number } centerX
-	 * @param { number } y
+	 * @returns { Array<{ text: string, isDigit: boolean }> }
 	 */
-	drawColoredDescriptionLine(canvasRenderingContext, line, centerX, y) {
-		// 토큰 분할: 연속된 숫자 vs 그 외.
+	tokenizeForColor(line) {
 		const tokens = [];
 		let buffer = "";
 		let bufferIsDigit = false;
@@ -1413,8 +1592,20 @@ export class CardBattleGame {
 		if (buffer.length > 0) {
 			tokens.push({ text: buffer, isDigit: bufferIsDigit });
 		}
+		return tokens;
+	}
 
-		// 가운데 정렬: 전체 폭 측정 후 좌측 시작 x 계산.
+	//==============================================================================
+	// 카드 설명 한 줄 (가운데 정렬). 숫자는 형광녹색, 그 외는 흰색.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { string } line
+	 * @param { number } centerX
+	 * @param { number } y
+	 */
+	drawColoredDescriptionLine(canvasRenderingContext, line, centerX, y) {
+		const tokens = this.tokenizeForColor(line);
 		let totalWidth = 0;
 		for (const token of tokens) {
 			totalWidth += canvasRenderingContext.measureText(token.text).width;
@@ -1423,6 +1614,26 @@ export class CardBattleGame {
 		let cursorX = centerX - totalWidth * 0.5;
 		for (const token of tokens) {
 			canvasRenderingContext.fillStyle = token.isDigit ? "#5cff7c" : "#ffffff";
+			canvasRenderingContext.fillText(token.text, cursorX, y);
+			cursorX += canvasRenderingContext.measureText(token.text).width;
+		}
+	}
+
+	//==============================================================================
+	// 일반 텍스트 한 줄 (좌측 시작 x 기준). 숫자는 형광녹색, 그 외는 회색.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { string } line
+	 * @param { number } startX
+	 * @param { number } y
+	 */
+	drawColoredTextLine(canvasRenderingContext, line, startX, y) {
+		const tokens = this.tokenizeForColor(line);
+		canvasRenderingContext.textAlign = "left";
+		let cursorX = startX;
+		for (const token of tokens) {
+			canvasRenderingContext.fillStyle = token.isDigit ? "#5cff7c" : "#cccccc";
 			canvasRenderingContext.fillText(token.text, cursorX, y);
 			cursorX += canvasRenderingContext.measureText(token.text).width;
 		}
@@ -1445,10 +1656,10 @@ export class CardBattleGame {
 		canvasRenderingContext.lineWidth = 2;
 		canvasRenderingContext.strokeRect(x, y, END_TURN_BUTTON_WIDTH, END_TURN_BUTTON_HEIGHT);
 		canvasRenderingContext.fillStyle = enabled ? "#ffffff" : "#888888";
-		canvasRenderingContext.font = "bold 16px GyeonggiBatangBold";
+		canvasRenderingContext.font = "bold 16px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText("턴종료", x + END_TURN_BUTTON_WIDTH * 0.5, y + END_TURN_BUTTON_HEIGHT * 0.5);
+		canvasRenderingContext.fillText("행동 종료", x + END_TURN_BUTTON_WIDTH * 0.5, y + END_TURN_BUTTON_HEIGHT * 0.5);
 	}
 
 	//==============================================================================
@@ -1529,14 +1740,17 @@ export class CardBattleGame {
 	 * @param { string } side
 	 */
 	drawBuffTooltip(canvasRenderingContext, buff, portraitRect, side) {
-		const definition = BuffDefinitions[buff.id] || { displayName: buff.id, color: "#888888", description: "" };
+		const definition = this.findBuffDefinition(buff.id) || { displayName: buff.id, color: "#888888", description: "" };
 		const tooltipWidth = 220;
 		const tooltipPaddingX = 12;
 		const titleFontSize = 16;
 		const bodyFontSize = 13;
 
+		// {N} 자리에 buff.value 치환.
+		const filledDescription = definition.description.replace(/\{N\}/g, String(buff.value));
+
 		canvasRenderingContext.font = `${bodyFontSize}px GyeonggiBatang`;
-		const bodyLines = this.wrapTextByWidth(canvasRenderingContext, definition.description, tooltipWidth - tooltipPaddingX * 2);
+		const bodyLines = this.wrapTextByWidth(canvasRenderingContext, filledDescription, tooltipWidth - tooltipPaddingX * 2);
 		const tooltipHeight = 14 + titleFontSize + 10 + bodyLines.length * (bodyFontSize + 4) + 12;
 
 		const tooltipX = side === PlayerSide.player
@@ -1550,17 +1764,19 @@ export class CardBattleGame {
 		canvasRenderingContext.lineWidth = 2;
 		canvasRenderingContext.strokeRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
 
+		// 헤더: displayName 만 (수치 없음).
 		canvasRenderingContext.fillStyle = "#ffffff";
 		canvasRenderingContext.font = `bold ${titleFontSize}px GyeonggiBatangBold`;
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "top";
-		canvasRenderingContext.fillText(`${definition.displayName} ${buff.value}`, tooltipX + tooltipPaddingX, tooltipY + 12);
+		canvasRenderingContext.fillText(definition.displayName, tooltipX + tooltipPaddingX, tooltipY + 12);
 
-		canvasRenderingContext.fillStyle = "#cccccc";
+		// 본문: 자연어 문장. 숫자는 형광녹색.
 		canvasRenderingContext.font = `${bodyFontSize}px GyeonggiBatang`;
+		canvasRenderingContext.textBaseline = "top";
 		const bodyStartY = tooltipY + 12 + titleFontSize + 10;
 		for (let i = 0; i < bodyLines.length; ++i) {
-			canvasRenderingContext.fillText(bodyLines[i], tooltipX + tooltipPaddingX, bodyStartY + i * (bodyFontSize + 4));
+			this.drawColoredTextLine(canvasRenderingContext, bodyLines[i], tooltipX + tooltipPaddingX, bodyStartY + i * (bodyFontSize + 4));
 		}
 	}
 
@@ -1673,7 +1889,7 @@ export class CardBattleGame {
 					break;
 				}
 				default: {
-					const buffDefinition = BuffDefinitions[effect.type];
+					const buffDefinition = this.findBuffDefinition(effect.type);
 					if (buffDefinition) {
 						lines.push(`${buffDefinition.displayName} ${effect.value} 부여`);
 					}
@@ -1682,6 +1898,56 @@ export class CardBattleGame {
 			}
 		}
 		return lines;
+	}
+
+	//==============================================================================
+	// 선형 보간.
+	//==============================================================================
+	/**
+	 * @param { number } a
+	 * @param { number } b
+	 * @param { number } t
+	 * @returns { number }
+	 */
+	lerp(a, b, t) {
+		return a + (b - a) * t;
+	}
+
+	//==============================================================================
+	// 이징 (out cubic). 시작은 빠르고 끝은 부드럽게.
+	//==============================================================================
+	/**
+	 * @param { number } t
+	 * @returns { number }
+	 */
+	easeOutCubic(t) {
+		const inverted = 1 - t;
+		return 1 - inverted * inverted * inverted;
+	}
+
+	//==============================================================================
+	// 플로팅 텍스트 그리기. 시간이 지날수록 위로 이동 + 페이드.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 */
+	drawFloatingTexts(canvasRenderingContext) {
+		for (const entry of this.#floatingTexts) {
+			const progress = 1 - entry.time / FLOATING_TEXT_DURATION;
+			const alpha = 1 - progress;
+			const yOffset = -progress * FLOATING_TEXT_RISE;
+			canvasRenderingContext.save();
+			canvasRenderingContext.globalAlpha = alpha;
+			canvasRenderingContext.fillStyle = entry.color;
+			canvasRenderingContext.font = "bold 22px GyeonggiBatangBold, sans-serif";
+			canvasRenderingContext.textAlign = "center";
+			canvasRenderingContext.textBaseline = "middle";
+			canvasRenderingContext.strokeStyle = "rgba(0, 0, 0, 0.85)";
+			canvasRenderingContext.lineWidth = 4;
+			canvasRenderingContext.strokeText(entry.text, entry.x, entry.y + yOffset);
+			canvasRenderingContext.fillText(entry.text, entry.x, entry.y + yOffset);
+			canvasRenderingContext.restore();
+		}
 	}
 
 	//==============================================================================

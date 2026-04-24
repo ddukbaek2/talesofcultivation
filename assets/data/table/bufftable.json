@@ -1,0 +1,47 @@
+[
+	{
+		"id": "block",
+		"displayName": "방어",
+		"color": "#4488cc",
+		"icon": "방",
+		"description": "받은 피해를 {N} 흡수한다",
+		"isTurnTemporary": true,
+		"decayPerTurn": false
+	},
+	{
+		"id": "strength",
+		"displayName": "힘",
+		"color": "#cc4444",
+		"icon": "힘",
+		"description": "내가 가하는 피해가 {N} 늘어난다",
+		"isTurnTemporary": false,
+		"decayPerTurn": false
+	},
+	{
+		"id": "dexterity",
+		"displayName": "민첩",
+		"color": "#44cc88",
+		"icon": "민",
+		"description": "내가 펼치는 방어가 {N} 늘어난다",
+		"isTurnTemporary": false,
+		"decayPerTurn": false
+	},
+	{
+		"id": "weaken",
+		"displayName": "약화",
+		"color": "#aa55cc",
+		"icon": "약",
+		"description": "내가 가하는 피해가 25% 줄어든다 ({N}턴)",
+		"isTurnTemporary": false,
+		"decayPerTurn": true
+	},
+	{
+		"id": "vulnerable",
+		"displayName": "취약",
+		"color": "#cc8844",
+		"icon": "취",
+		"description": "받는 피해가 50% 늘어난다 ({N}턴)",
+		"isTurnTemporary": false,
+		"decayPerTurn": true
+	}
+]

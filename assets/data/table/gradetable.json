@@ -1,0 +1,44 @@
+[
+	{
+		"id": 40000001,
+		"rank": 1,
+		"name": "일반",
+		"color": "#ffffff",
+		"description": "흔히 보이는 평범한 등급."
+	},
+	{
+		"id": 40000002,
+		"rank": 2,
+		"name": "고급",
+		"color": "#33cc33",
+		"description": "약간의 가치가 있는 등급."
+	},
+	{
+		"id": 40000003,
+		"rank": 3,
+		"name": "희귀",
+		"color": "#3388ff",
+		"description": "잘 등장하지 않는 등급."
+	},
+	{
+		"id": 40000004,
+		"rank": 4,
+		"name": "영웅",
+		"color": "#cc3333",
+		"description": "극히 드문 등급."
+	},
+	{
+		"id": 40000005,
+		"rank": 5,
+		"name": "전설",
+		"color": "#9933cc",
+		"description": "전설로만 전해지는 등급."
+	},
+	{
+		"id": 40000006,
+		"rank": 6,
+		"name": "신화",
+		"color": "#ffcc00",
+		"description": "신화 속 등급."
+	}
+]

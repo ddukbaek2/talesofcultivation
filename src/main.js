@@ -36,6 +36,8 @@ const JsonId = System.Object.freeze({
 	sectTable: 2,
 	realmTable: 3,
 	characterTable: 4,
+	gradeTable: 5,
+	buffTable: 6,
 });
 
 
@@ -136,6 +138,8 @@ export class TalesOfCultivation extends Scene {
 		this.loadJsonAsset(JsonId.sectTable, "./assets/data/table/secttable.json");
 		this.loadJsonAsset(JsonId.realmTable, "./assets/data/table/realmtable.json");
 		this.loadJsonAsset(JsonId.characterTable, "./assets/data/table/charactertable.json");
+		this.loadJsonAsset(JsonId.gradeTable, "./assets/data/table/gradetable.json");
+		this.loadJsonAsset(JsonId.buffTable, "./assets/data/table/bufftable.json");
 
 		// 예약된 모든 리소스 로드.
 		await this.loadAllAssets();
@@ -155,8 +159,20 @@ export class TalesOfCultivation extends Scene {
 		const root = this.getRoot();
 		this.#devtools.setRootNodes([root]);
 
-		// 카드 테이블 데이터를 카드배틀 게임에 주입 (주입 시점에 게임이 새 판으로 초기화됨).
-		// 시트명 = json 파일명 = 테이블 이름. 파일 최상위는 배열.
+		// 데이터 테이블을 카드배틀 게임에 주입.
+		// 카드 정의를 마지막에 주입해야 reset 호출 시 등급/종파/버프 정의가 이미 들어있음.
+		const gradeTableAsset = this.getLoadedJsonAsset(JsonId.gradeTable);
+		if (gradeTableAsset && System.Array.isArray(gradeTableAsset.data)) {
+			this.#cardBattleGame.setGradeDefinitions(gradeTableAsset.data);
+		}
+		const sectTableAsset = this.getLoadedJsonAsset(JsonId.sectTable);
+		if (sectTableAsset && System.Array.isArray(sectTableAsset.data)) {
+			this.#cardBattleGame.setSectDefinitions(sectTableAsset.data);
+		}
+		const buffTableAsset = this.getLoadedJsonAsset(JsonId.buffTable);
+		if (buffTableAsset && System.Array.isArray(buffTableAsset.data)) {
+			this.#cardBattleGame.setBuffDefinitions(buffTableAsset.data);
+		}
 		const cardTableAsset = this.getLoadedJsonAsset(JsonId.cardTable);
 		if (cardTableAsset && System.Array.isArray(cardTableAsset.data)) {
 			this.#cardBattleGame.setCardDefinitions(cardTableAsset.data);

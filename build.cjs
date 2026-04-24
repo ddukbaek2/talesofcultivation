@@ -283,6 +283,8 @@ function printUsage() {
 	console.log("  node build.cjs web deploy");
 	console.log("  node build.cjs web check");
 	console.log("  node build.cjs data tables   (xlsx → json 변환)");
+	console.log("  node build.cjs data classes  (xlsx → src/table 데이터 클래스 생성)");
+	console.log("  node build.cjs data all      (json + classes 동시 생성)");
 	console.log("  node build.cjs utility check-syntax");
 }
 
@@ -292,6 +294,8 @@ const BUILD_ENTRY_LIST = [
 	{ platform: "web", entry: "deploy", requiresTarget: false },
 	{ platform: "web", entry: "check", requiresTarget: false },
 	{ platform: "data", entry: "tables", requiresTarget: false },
+	{ platform: "data", entry: "classes", requiresTarget: false },
+	{ platform: "data", entry: "all", requiresTarget: false },
 	{ platform: "utility", entry: "check-syntax", requiresTarget: false },
 	{ platform: "utility", entry: "convert-quotes", requiresTarget: false },
 ];
@@ -332,6 +336,18 @@ async function dispatch(platform, entry, rest) {
 		case "data:tables": {
 			const xlsxToJsonModule = require(path.join(projectRoot, "tools", "xlsx-to-json.cjs"));
 			xlsxToJsonModule.convertAllTables(projectRoot);
+			break;
+		}
+		case "data:classes": {
+			const xlsxToClassesModule = require(path.join(projectRoot, "tools", "xlsx-to-classes.cjs"));
+			xlsxToClassesModule.generateAllClasses(projectRoot);
+			break;
+		}
+		case "data:all": {
+			const xlsxToJsonModule = require(path.join(projectRoot, "tools", "xlsx-to-json.cjs"));
+			const xlsxToClassesModule = require(path.join(projectRoot, "tools", "xlsx-to-classes.cjs"));
+			xlsxToJsonModule.convertAllTables(projectRoot);
+			xlsxToClassesModule.generateAllClasses(projectRoot);
 			break;
 		}
 		case "utility:check-syntax": {

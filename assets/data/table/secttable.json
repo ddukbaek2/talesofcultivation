@@ -2,11 +2,15 @@
 	{
 		"id": 10000000,
 		"name": "없음",
-		"description": "소속 종파가 없음."
+		"description": "소속 종파가 없음.",
+		"backColor": "#3a3a55",
+		"emblemColor": "#5a5a8a"
 	},
 	{
 		"id": 10000001,
 		"name": "검종",
-		"description": "검을 수련하는 종파."
+		"description": "검을 수련하는 종파.",
+		"backColor": "#1f4a3a",
+		"emblemColor": "#3a8866"
 	}
 ]

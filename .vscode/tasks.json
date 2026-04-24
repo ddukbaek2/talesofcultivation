@@ -30,6 +30,36 @@
 				"isDefault": true
 			},
 			"problemMatcher": []
+		},
+		{
+			"label": "​​​​Tables: xlsx → json",
+			"type": "shell",
+			"command": "node build.cjs data tables",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "​​​​​Tables: xlsx → 데이터 클래스 (.js)",
+			"type": "shell",
+			"command": "node build.cjs data classes",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "​​​​​​Tables: 전체 (json + 클래스)",
+			"type": "shell",
+			"command": "node build.cjs data all",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
 		}
 	]
 }

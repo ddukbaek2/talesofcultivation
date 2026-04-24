@@ -14,7 +14,8 @@
       "Bash(npm install *)",
       "Bash(node tools/json-to-xlsx.cjs)",
       "Bash(node build.cjs data tables)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(node build.cjs data all)"
     ]
   }
 }
