@@ -3,7 +3,7 @@
 //==============================================================================
 // json → xlsx 일회성 export (vanilla.js excel 도구 위임).
 //
-// assets/data/table/*.json 을 순회해 xlsx/<basename>.xlsx 로 export.
+// assets/data/table/*.json 을 순회해 assets/xlsx/<basename>.xlsx 로 export.
 // 이미 같은 xlsx 가 있으면 보호 (덮어쓰지 않음). --force 로 강제.
 //
 // 사용:
@@ -18,6 +18,6 @@ const isForce = process.argv.includes("--force");
 
 excel.exportJsonDirectoryToXlsx(
 	path.join(projectRoot, "assets", "data", "table"),
-	path.join(projectRoot, "xlsx"),
+	path.join(projectRoot, "assets", "xlsx"),
 	{ force: isForce }
 );

@@ -17,7 +17,7 @@ const BASE_IMPORT_PATH = "../../libs/vanilla.js/src/base/object.js";
 function generateAllClasses(projectRoot) {
 	const excel = require(path.join(projectRoot, "libs", "vanilla.js", "tools", "excel.cjs"));
 	excel.generateClassesFromDirectory(
-		path.join(projectRoot, "xlsx"),
+		path.join(projectRoot, "assets", "xlsx"),
 		path.join(projectRoot, CLASS_OUTPUT_RELATIVE_DIR),
 		{
 			skipFileBaseNames: ["tabletemplate"],

@@ -17,7 +17,7 @@ const TABLE_OUTPUT_RELATIVE_DIR = path.join("assets", "data", "table");
 function convertAllTables(projectRoot) {
 	const excel = require(path.join(projectRoot, "libs", "vanilla.js", "tools", "excel.cjs"));
 	excel.convertDirectoryToJson(
-		path.join(projectRoot, "xlsx"),
+		path.join(projectRoot, "assets", "xlsx"),
 		path.join(projectRoot, TABLE_OUTPUT_RELATIVE_DIR),
 		{
 			skipFileBaseNames: ["tabletemplate"],

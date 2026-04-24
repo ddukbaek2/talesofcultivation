@@ -16,8 +16,8 @@ import { DEVTools } from "../libs/vanilla.js/src/misc/devtools.js";
 import { ViewScaleMode } from "../libs/vanilla.js/src/core/viewmanager.js";
 import { Colors } from "../libs/vanilla.js/src/base/colors.js";
 import { MergeGame } from "./minigame/mergegame.js";
-import { BattlePart } from "./minigame/battlepart.js";
-import { NovelPart } from "./minigame/novelpart.js";
+import { BattlePart } from "./part/battlepart.js";
+import { NovelPart } from "./part/novelpart.js";
 
 
 //==============================================================================
@@ -40,6 +40,7 @@ const JsonId = System.Object.freeze({
 	characterTable: 4,
 	gradeTable: 5,
 	buffTable: 6,
+	dialogueTable: 7,
 });
 
 
@@ -147,6 +148,7 @@ export class TalesOfCultivation extends Scene {
 		this.loadJsonAsset(JsonId.characterTable, "./assets/data/table/charactertable.json");
 		this.loadJsonAsset(JsonId.gradeTable, "./assets/data/table/gradetable.json");
 		this.loadJsonAsset(JsonId.buffTable, "./assets/data/table/bufftable.json");
+		this.loadJsonAsset(JsonId.dialogueTable, "./assets/data/table/dialoguetable.json");
 
 		// 예약된 모든 리소스 로드.
 		await this.loadAllAssets();
@@ -180,9 +182,26 @@ export class TalesOfCultivation extends Scene {
 		if (buffTableAsset && System.Array.isArray(buffTableAsset.data)) {
 			this.#battlePart.setBuffDefinitions(buffTableAsset.data);
 		}
+		const realmTableAsset = this.getLoadedJsonAsset(JsonId.realmTable);
+		if (realmTableAsset && System.Array.isArray(realmTableAsset.data)) {
+			this.#battlePart.setRealmDefinitions(realmTableAsset.data);
+		}
+		const characterTableAsset = this.getLoadedJsonAsset(JsonId.characterTable);
+		if (characterTableAsset && System.Array.isArray(characterTableAsset.data)) {
+			this.#battlePart.setCharacterDefinitions(characterTableAsset.data);
+		}
 		const cardTableAsset = this.getLoadedJsonAsset(JsonId.cardTable);
 		if (cardTableAsset && System.Array.isArray(cardTableAsset.data)) {
 			this.#battlePart.setCardDefinitions(cardTableAsset.data);
+		}
+		// 전투 셋업: 한두백 (10000001) vs 검종 장로 (10000002).
+		this.#battlePart.setBattleCharacters(10000001, 10000002);
+
+		// 노벨 대사 테이블 주입 후 인트로 장면 시작.
+		const dialogueTableAsset = this.getLoadedJsonAsset(JsonId.dialogueTable);
+		if (dialogueTableAsset && System.Array.isArray(dialogueTableAsset.data)) {
+			this.#novelPart.setDialogues(dialogueTableAsset.data);
+			this.#novelPart.playScene("intro");
 		}
 	}
 

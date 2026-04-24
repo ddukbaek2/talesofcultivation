@@ -1,0 +1,37 @@
+[
+	{
+		"id": 10000001,
+		"scene": "intro",
+		"sequence": 1,
+		"speaker": "한두백",
+		"text": "검종의 산문… 마침내 닿았구나."
+	},
+	{
+		"id": 10000002,
+		"scene": "intro",
+		"sequence": 2,
+		"speaker": "검종 장로",
+		"text": "젊은이, 무슨 연유로 이 산을 올랐는가?"
+	},
+	{
+		"id": 10000003,
+		"scene": "intro",
+		"sequence": 3,
+		"speaker": "한두백",
+		"text": "수선의 길을 걷고자 합니다. 부디 받아주십시오."
+	},
+	{
+		"id": 10000004,
+		"scene": "intro",
+		"sequence": 4,
+		"speaker": "검종 장로",
+		"text": "흠… 의지는 가상하다만, 입문 시험은 통과해야겠지."
+	},
+	{
+		"id": 10000005,
+		"scene": "intro",
+		"sequence": 5,
+		"speaker": "검종 장로",
+		"text": "내 검을 막아 보아라. 사정은 두지 않겠다."
+	}
+]

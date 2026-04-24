@@ -11,25 +11,17 @@ import { Object } from "../../libs/vanilla.js/src/base/object.js";
 const SIDE_MARGIN = 16;
 const TEXTBOX_HEIGHT = 220;
 const TEXTBOX_BOTTOM_MARGIN = 24;
-const NAME_BOX_WIDTH = 180;
 const NAME_BOX_HEIGHT = 40;
+const NAME_BOX_PADDING_X = 24;
+const NAME_BOX_MIN_WIDTH = 80;
+const NAME_BOX_FONT = "bold 18px GyeonggiBatangBold, sans-serif";
 const TYPING_CHARS_PER_SECOND = 28;
 
 
 //==============================================================================
-// 임시 인트로 대사 (테이블화 전 가라).
-//==============================================================================
-const INTRO_DIALOGUES = [
-	{ speaker: "유호겸",     text: "검종의 산문… 마침내 닿았구나." },
-	{ speaker: "검종 장로",  text: "젊은이, 무슨 연유로 이 산을 올랐는가?" },
-	{ speaker: "유호겸",     text: "수선의 길을 걷고자 합니다. 부디 받아주십시오." },
-	{ speaker: "검종 장로",  text: "흠… 의지는 가상하다만, 입문 시험은 통과해야겠지." },
-	{ speaker: "검종 장로",  text: "내 검을 막아 보아라. 사정은 두지 않겠다." },
-];
-
-
-//==============================================================================
 // 비주얼 노벨 파트.
+// - 외부에서 dialoguetable 의 모든 행을 setDialogues 로 받아둠.
+// - playScene(sceneName) 으로 특정 장면의 대사들만 sequence 순으로 추출해 시작.
 // - 대사 한 줄씩 타이핑 효과로 출력.
 // - 누르면 진행 (타이핑 중이면 즉시 완성, 완성 상태면 다음 대사).
 // - 마지막 대사 이후 한 번 더 누르면 isFinished = true.
@@ -38,7 +30,9 @@ export class NovelPart extends Object {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
-	/** @private @type { Array<{ speaker: string, text: string }> } */ #dialogues;
+	/** @private @type { Array<{ id: number, scene: string, sequence: number, speaker: string, text: string }> } */ #allDialogues;
+	/** @private @type { Array<{ id: number, scene: string, sequence: number, speaker: string, text: string }> } */ #dialogues;
+	/** @private @type { string } */ #currentScene;
 	/** @private @type { number } */ #currentIndex;
 	/** @private @type { number } */ #revealedChars;
 	/** @private @type { boolean } */ #isFinished;
@@ -49,7 +43,9 @@ export class NovelPart extends Object {
 	//==============================================================================
 	constructor() {
 		super();
-		this.#dialogues = INTRO_DIALOGUES;
+		this.#allDialogues = [];
+		this.#dialogues = [];
+		this.#currentScene = "";
 		this.#currentIndex = 0;
 		this.#revealedChars = 0;
 		this.#isFinished = false;
@@ -57,23 +53,47 @@ export class NovelPart extends Object {
 	}
 
 	//==============================================================================
-	// 대사 데이터 교체.
+	// 외부에서 대사 테이블 (모든 행) 주입.
 	//==============================================================================
 	/**
-	 * @param { Array<{ speaker: string, text: string }> } dialogues
+	 * @param { Array<{ id: number, scene: string, sequence: number, speaker: string, text: string }> } allDialogues
 	 */
-	setDialogues(dialogues) {
-		this.#dialogues = dialogues;
-		this.reset();
+	setDialogues(allDialogues) {
+		this.#allDialogues = System.Array.isArray(allDialogues) ? allDialogues : [];
+		// 현재 재생 중인 장면이 있으면 데이터 갱신 후 그 장면을 다시 추출.
+		if (this.#currentScene && this.#currentScene.length > 0) {
+			this.playScene(this.#currentScene);
+		}
 	}
 
 	//==============================================================================
-	// 처음으로.
+	// 특정 장면의 대사들을 sequence 오름차순으로 추출해 처음부터 시작.
+	//==============================================================================
+	/**
+	 * @param { string } sceneName
+	 */
+	playScene(sceneName) {
+		this.#currentScene = sceneName;
+		const filtered = this.#allDialogues.filter((d) => d.scene === sceneName);
+		filtered.sort((a, b) => {
+			const av = typeof a.sequence === "number" ? a.sequence : 0;
+			const bv = typeof b.sequence === "number" ? b.sequence : 0;
+			return av - bv;
+		});
+		this.#dialogues = filtered;
+		this.#currentIndex = 0;
+		this.#revealedChars = 0;
+		this.#isFinished = this.#dialogues.length === 0;
+		this.#wasTouchPressed = false;
+	}
+
+	//==============================================================================
+	// 처음으로 (현재 장면을 다시 처음부터). 장면이 비어 있으면 즉시 종료 상태.
 	//==============================================================================
 	reset() {
 		this.#currentIndex = 0;
 		this.#revealedChars = 0;
-		this.#isFinished = false;
+		this.#isFinished = this.#dialogues.length === 0;
 		this.#wasTouchPressed = false;
 	}
 
@@ -92,7 +112,7 @@ export class NovelPart extends Object {
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { import("../../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
+	 * @param { import("../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	tick(timeDelta, inputManager, popupRect) {
@@ -139,7 +159,7 @@ export class NovelPart extends Object {
 	// 출력.
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
+	 * @param { import("../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	draw(graphic, popupRect) {
@@ -174,16 +194,18 @@ export class NovelPart extends Object {
 		canvasRenderingContext.lineWidth = 2;
 		canvasRenderingContext.strokeRect(textBoxX, textBoxY, textBoxWidth, TEXTBOX_HEIGHT);
 
-		// 화자 이름 박스 (대사 박스 좌상단 위로).
+		// 화자 이름 박스 (대사 박스 좌상단 위로). 폭은 이름 길이에 맞춰 가변.
+		canvasRenderingContext.font = NAME_BOX_FONT;
+		const nameMetrics = canvasRenderingContext.measureText(currentDialogue.speaker);
+		const nameBoxWidth = System.Math.max(NAME_BOX_MIN_WIDTH, System.Math.ceil(nameMetrics.width) + NAME_BOX_PADDING_X * 2);
 		const nameBoxX = textBoxX + 24;
 		const nameBoxY = textBoxY - NAME_BOX_HEIGHT * 0.5;
 		canvasRenderingContext.fillStyle = "#d4b46a";
-		canvasRenderingContext.fillRect(nameBoxX, nameBoxY, NAME_BOX_WIDTH, NAME_BOX_HEIGHT);
+		canvasRenderingContext.fillRect(nameBoxX, nameBoxY, nameBoxWidth, NAME_BOX_HEIGHT);
 		canvasRenderingContext.fillStyle = "#1a1a14";
-		canvasRenderingContext.font = "bold 18px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(currentDialogue.speaker, nameBoxX + NAME_BOX_WIDTH * 0.5, nameBoxY + NAME_BOX_HEIGHT * 0.5);
+		canvasRenderingContext.fillText(currentDialogue.speaker, nameBoxX + nameBoxWidth * 0.5, nameBoxY + NAME_BOX_HEIGHT * 0.5);
 
 		// 대사 본문 (자동 줄바꿈).
 		canvasRenderingContext.fillStyle = "#ffffff";

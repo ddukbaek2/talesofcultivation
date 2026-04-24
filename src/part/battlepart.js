@@ -32,7 +32,7 @@ const PORTRAIT_HEIGHT = 168;
 const END_TURN_BUTTON_WIDTH = SLOT_WIDTH;
 const END_TURN_BUTTON_HEIGHT = 40;
 const HAND_BOTTOM_MARGIN = 20;
-const PICKED_CARD_SCALE = 1.3;
+const PICKED_CARD_SCALE = 1.55;
 const PICKED_CARD_LIFT = 40;
 const SELECTION_TWEEN_SPEED = 8.0; // 1초당 0→1 8회 (≈0.125초). 큰 값일수록 빠르게.
 const FLOATING_TEXT_DURATION = 0.9;
@@ -99,6 +99,7 @@ class PlayerState extends Object {
 	// 멤버 변수 목록.
 	//==============================================================================
 	/** @type { string } */ side;
+	/** @type { string } */ nickname;
 	/** @type { string } */ stageName;
 	/** @type { number } */ health;
 	/** @type { number } */ maxEnergy;
@@ -114,6 +115,7 @@ class PlayerState extends Object {
 	constructor(side) {
 		super();
 		this.side = side;
+		this.nickname = "";
 		this.stageName = "";
 		this.health = STARTING_HEALTH;
 		this.maxEnergy = 0;
@@ -137,6 +139,10 @@ export class BattlePart extends Object {
 	/** @private @type { Array | null } */ #gradeDefinitions;
 	/** @private @type { Array | null } */ #sectDefinitions;
 	/** @private @type { Array | null } */ #buffDefinitions;
+	/** @private @type { Array | null } */ #realmDefinitions;
+	/** @private @type { Array | null } */ #characterDefinitions;
+	/** @private @type { number } */ #playerCharacterId;
+	/** @private @type { number } */ #opponentCharacterId;
 	/** @private @type { PlayerState } */ #player;
 	/** @private @type { PlayerState } */ #opponent;
 	/** @private @type { string } */ #currentSide;
@@ -145,6 +151,7 @@ export class BattlePart extends Object {
 	/** @private @type { Array<{ card: Card, layout: { x: number, y: number, width: number, height: number }, exitTime: number, isReveal: boolean }> } */ #playerExitingCards;
 	/** @private @type { Array<{ card: Card, layout: { x: number, y: number, width: number, height: number }, exitTime: number, isReveal: boolean }> } */ #opponentExitingCards;
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #endTurnButtonRect;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #abandonButtonRect;
 	/** @private @type { number | null } */ #selectedCardId;
 	/** @private @type { string } */ #endGameMessage;
 	/** @private @type { number } */ #nextCardId;
@@ -170,6 +177,10 @@ export class BattlePart extends Object {
 		this.#gradeDefinitions = null;
 		this.#sectDefinitions = null;
 		this.#buffDefinitions = null;
+		this.#realmDefinitions = null;
+		this.#characterDefinitions = null;
+		this.#playerCharacterId = 0;
+		this.#opponentCharacterId = 0;
 		this.#player = new PlayerState(PlayerSide.player);
 		this.#opponent = new PlayerState(PlayerSide.opponent);
 		this.#currentSide = PlayerSide.player;
@@ -178,6 +189,7 @@ export class BattlePart extends Object {
 		this.#playerExitingCards = [];
 		this.#opponentExitingCards = [];
 		this.#endTurnButtonRect = null;
+		this.#abandonButtonRect = null;
 		this.#selectedCardId = null;
 		this.#endGameMessage = "";
 		this.#nextCardId = 1;
@@ -230,6 +242,63 @@ export class BattlePart extends Object {
 		this.#buffDefinitions = buffDefinitions;
 	}
 
+	/**
+	 * @param { Array } characterDefinitions
+	 */
+	setCharacterDefinitions(characterDefinitions) {
+		this.#characterDefinitions = characterDefinitions;
+	}
+
+	/**
+	 * @param { Array } realmDefinitions
+	 */
+	setRealmDefinitions(realmDefinitions) {
+		this.#realmDefinitions = realmDefinitions;
+	}
+
+	//==============================================================================
+	// 경지 정의 검색.
+	//==============================================================================
+	/**
+	 * @param { number } realmId
+	 * @returns { Object | null }
+	 */
+	findRealmDefinition(realmId) {
+		if (this.#realmDefinitions === null) {
+			return null;
+		}
+		const found = this.#realmDefinitions.find((r) => r.id === realmId);
+		return found ? found : null;
+	}
+
+	//==============================================================================
+	// 전투 상대 캐릭터 설정 (양쪽 id). 호출 시 자동 reset (덱이 양쪽 캐릭터의 cardIds 로 구성됨).
+	//==============================================================================
+	/**
+	 * @param { number } playerCharacterId
+	 * @param { number } opponentCharacterId
+	 */
+	setBattleCharacters(playerCharacterId, opponentCharacterId) {
+		this.#playerCharacterId = playerCharacterId;
+		this.#opponentCharacterId = opponentCharacterId;
+		this.reset();
+	}
+
+	//==============================================================================
+	// 캐릭터 정의 (id) 검색.
+	//==============================================================================
+	/**
+	 * @param { number } characterId
+	 * @returns { Object | null }
+	 */
+	findCharacterDefinition(characterId) {
+		if (this.#characterDefinitions === null) {
+			return null;
+		}
+		const found = this.#characterDefinitions.find((c) => c.id === characterId);
+		return found ? found : null;
+	}
+
 	//==============================================================================
 	// 등급 정의 (rank 1~6) 검색.
 	//==============================================================================
@@ -261,17 +330,18 @@ export class BattlePart extends Object {
 	}
 
 	//==============================================================================
-	// 버프 정의 (id 문자열) 검색.
+	// 버프 정의 (key 문자열) 검색. bufftable 의 key 컬럼 = buff 인스턴스의 id.
+	// (테이블 자체의 id 는 8자리 숫자, 카드 effect.type 은 key 와 매칭)
 	//==============================================================================
 	/**
-	 * @param { string } buffId
+	 * @param { string } buffKey
 	 * @returns { Object | null }
 	 */
-	findBuffDefinition(buffId) {
+	findBuffDefinition(buffKey) {
 		if (this.#buffDefinitions === null) {
 			return null;
 		}
-		const found = this.#buffDefinitions.find((b) => b.id === buffId);
+		const found = this.#buffDefinitions.find((b) => b.key === buffKey);
 		return found ? found : null;
 	}
 
@@ -287,6 +357,7 @@ export class BattlePart extends Object {
 		this.#playerExitingCards = [];
 		this.#opponentExitingCards = [];
 		this.#endTurnButtonRect = null;
+		this.#abandonButtonRect = null;
 		this.#selectedCardId = null;
 		this.#endGameMessage = "";
 		this.#nextCardId = 1;
@@ -302,18 +373,15 @@ export class BattlePart extends Object {
 		this.#opponentDeckSlotCenter = null;
 		this.#opponentDiscardSlotCenter = null;
 		this.#floatingTexts = [];
-		this.#player.deck = this.createRandomDeck();
-		this.#opponent.deck = this.createRandomDeck();
+		// 양쪽 캐릭터 정의에서 닉네임/경지/덱(cardIds) 가져오기. 정의 없으면 fallback.
+		this.applyCharacterToPlayer(this.#player, this.#playerCharacterId, "한두백");
+		this.applyCharacterToPlayer(this.#opponent, this.#opponentCharacterId, "적");
 		for (let i = 0; i < STARTING_HAND_SIZE; ++i) {
 			this.drawCardFromDeck(this.#player);
 			this.drawCardFromDeck(this.#opponent);
 		}
 		this.#player.maxEnergy = 1;
 		this.#player.currentEnergy = 1;
-
-		// 가라 경지 (실제 경지 시스템이 붙기 전까지 임시 표시값).
-		this.#player.stageName = "연기기";
-		this.#opponent.stageName = "결단기";
 
 		// 시연용 버프/디버프.
 		this.addBuff(this.#player, "block", 3);
@@ -342,7 +410,56 @@ export class BattlePart extends Object {
 	}
 
 	//==============================================================================
-	// 랜덤 덱 생성.
+	// 캐릭터 정의를 PlayerState 에 반영 (닉네임/경지/덱).
+	// characterId 가 없거나 정의를 못 찾으면 fallback 닉네임 + 랜덤 덱.
+	//==============================================================================
+	/**
+	 * @param { PlayerState } playerState
+	 * @param { number } characterId
+	 * @param { string } fallbackNickname
+	 */
+	applyCharacterToPlayer(playerState, characterId, fallbackNickname) {
+		const definition = this.findCharacterDefinition(characterId);
+		if (definition) {
+			playerState.nickname = definition.name || fallbackNickname;
+			// 경지: realm 정의에서 이름 룩업. 없으면 빈 문자열.
+			const realmDefinition = this.findRealmDefinition(definition.realmId);
+			playerState.stageName = realmDefinition ? realmDefinition.name : "";
+			if (System.Array.isArray(definition.cardIds) && definition.cardIds.length > 0) {
+				playerState.deck = this.createDeckFromCardIds(definition.cardIds);
+				return;
+			}
+		}
+		else {
+			playerState.nickname = fallbackNickname;
+			playerState.stageName = "";
+		}
+		playerState.deck = this.createRandomDeck();
+	}
+
+	//==============================================================================
+	// 카드 id 배열 → Card 배열 (입력 순서 유지). 정의 없는 id 는 무시.
+	//==============================================================================
+	/**
+	 * @param { number[] } cardIds
+	 * @returns { Card[] }
+	 */
+	createDeckFromCardIds(cardIds) {
+		const deck = [];
+		for (const cardId of cardIds) {
+			const definition = this.findCardDefinition(cardId);
+			if (definition === null) {
+				continue;
+			}
+			const newId = this.#nextCardId;
+			++this.#nextCardId;
+			deck.push(new Card(newId, cardId));
+		}
+		return deck;
+	}
+
+	//==============================================================================
+	// 랜덤 덱 생성 (캐릭터 cardIds 가 없을 때만 fallback 으로 사용).
 	//==============================================================================
 	/**
 	 * @returns { Card[] }
@@ -383,7 +500,7 @@ export class BattlePart extends Object {
 		playerState.deck = recycled;
 		playerState.discard = [];
 		const sideName = playerState.side === PlayerSide.player ? "당신" : "적";
-		this.appendLog(`${sideName}: 무덤→덱 재활용`);
+		this.appendLog(`${sideName}: 묘패→산패 재활용`);
 	}
 
 	//==============================================================================
@@ -733,7 +850,7 @@ export class BattlePart extends Object {
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { import("../../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
+	 * @param { import("../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	tick(timeDelta, inputManager, popupRect) {
@@ -756,62 +873,71 @@ export class BattlePart extends Object {
 
 		const viewInputPosition = inputManager.getViewInputPosition();
 
-		// 누름: 턴종료 버튼 / 카드 선택 / 버프 누름 (이 순서).
-		if (inputManager.isTouchPressed() && this.#selectedCardId === null && this.#pressedBuffInfo === null) {
+		// 클릭(press) 한 번 = 선택. 같은 카드를 다시 클릭 = 사용. 카드 외부 클릭 = 취소.
+		// 영력 체크는 "사용" 시점 (두 번째 클릭) 에서.
+		if (inputManager.isTouchPressed()) {
+			// 1) 턴종료 / 전투포기 버튼.
 			if (this.#endTurnButtonRect && this.isInsideRect(viewInputPosition, this.#endTurnButtonRect)) {
 				if (this.isEndTurnButtonEnabled()) {
 					this.endTurn();
 				}
 				return;
 			}
+			if (this.#abandonButtonRect && this.isInsideRect(viewInputPosition, this.#abandonButtonRect)) {
+				if (this.#endGameMessage === "") {
+					this.appendLog("당신: 전투 포기");
+					this.#player.health = 0;
+					this.checkGameOver();
+				}
+				return;
+			}
+
+			// 2) 손패 카드 hit.
 			const pickedHandIndex = this.findHandCardIndexAtPosition(viewInputPosition);
 			if (pickedHandIndex >= 0) {
-				// 영력 부족이라도 일단 선택해 확대된 모습은 보여준다.
 				const pickedCard = this.#player.hand[pickedHandIndex];
-				this.#selectedCardId = pickedCard.id;
-			}
-			else {
-				const playerBuffEntry = this.findBuffEntryAtPosition(viewInputPosition, this.#playerBuffLayouts);
-				if (playerBuffEntry) {
-					this.#pressedBuffInfo = { side: PlayerSide.player, buff: playerBuffEntry.buff };
-				}
-				else {
-					const opponentBuffEntry = this.findBuffEntryAtPosition(viewInputPosition, this.#opponentBuffLayouts);
-					if (opponentBuffEntry) {
-						this.#pressedBuffInfo = { side: PlayerSide.opponent, buff: opponentBuffEntry.buff };
-					}
-				}
-			}
-		}
-
-		// 누른 상태 유지 중: 카드 영역 벗어나면 즉시 취소 + 플로팅 피드백.
-		if (this.#selectedCardId !== null && !inputManager.isTouchReleased()) {
-			const selectedLayout = this.#playerHandLayouts.find((entry) => entry.card.id === this.#selectedCardId);
-			if (selectedLayout && !this.isInsideHandCard(viewInputPosition, selectedLayout)) {
-				this.addFloatingText("취소", "#aaaaaa", viewInputPosition.x, viewInputPosition.y);
-				this.#selectedCardId = null;
-			}
-		}
-
-		// 뗌: 선택된 카드 영역 안이면 사용, 아니면 취소. 버프 누름도 함께 해제.
-		if (inputManager.isTouchReleased()) {
-			if (this.#selectedCardId !== null) {
-				const selectedCard = this.#player.hand.find((c) => c.id === this.#selectedCardId);
-				const selectedLayout = this.#playerHandLayouts.find((entry) => entry.card.id === this.#selectedCardId);
-				if (selectedCard && selectedLayout && this.isInsideHandCard(viewInputPosition, selectedLayout)) {
-					const success = this.playCard(this.#player, this.#opponent, selectedCard);
+				if (this.#selectedCardId === pickedCard.id) {
+					// 같은 카드 두 번째 클릭 → 사용 (영력 체크는 playCard 안에서).
+					const layoutEntry = this.#playerHandLayouts.find((entry) => entry.card.id === pickedCard.id);
+					const feedbackX = layoutEntry ? layoutEntry.centerX : viewInputPosition.x;
+					const feedbackY = layoutEntry ? layoutEntry.centerY : viewInputPosition.y;
+					const success = this.playCard(this.#player, this.#opponent, pickedCard);
 					if (success) {
-						this.addFloatingText("사용!", "#5cff7c", selectedLayout.centerX, selectedLayout.centerY);
+						this.addFloatingText("사용!", "#5cff7c", feedbackX, feedbackY);
+						this.#selectedCardId = null;
 					}
 					else {
-						this.addFloatingText("영력 부족", "#ff6060", selectedLayout.centerX, selectedLayout.centerY);
+						this.addFloatingText("영력 부족", "#ff6060", feedbackX, feedbackY);
+						// 영력 부족이면 선택은 그대로 유지 (외부 클릭 시 취소).
 					}
 				}
 				else {
-					this.addFloatingText("취소", "#aaaaaa", viewInputPosition.x, viewInputPosition.y);
+					// 다른 카드 (또는 첫 선택) → 그 카드를 새로 선택.
+					this.#selectedCardId = pickedCard.id;
 				}
+				return;
+			}
+
+			// 3) 버프 hit (정보 표시용 — 누르고 있는 동안만 툴팁).
+			const playerBuffEntry = this.findBuffEntryAtPosition(viewInputPosition, this.#playerBuffLayouts);
+			if (playerBuffEntry) {
+				this.#pressedBuffInfo = { side: PlayerSide.player, buff: playerBuffEntry.buff };
+				return;
+			}
+			const opponentBuffEntry = this.findBuffEntryAtPosition(viewInputPosition, this.#opponentBuffLayouts);
+			if (opponentBuffEntry) {
+				this.#pressedBuffInfo = { side: PlayerSide.opponent, buff: opponentBuffEntry.buff };
+				return;
+			}
+
+			// 4) 그 외 (카드 외부 빈 영역) → 선택 카드가 있으면 취소.
+			if (this.#selectedCardId !== null) {
 				this.#selectedCardId = null;
 			}
+		}
+
+		// 뗌: 버프 툴팁만 해제. 카드는 hold 와 무관하므로 건드리지 않음.
+		if (inputManager.isTouchReleased()) {
 			this.#pressedBuffInfo = null;
 		}
 	}
@@ -887,7 +1013,7 @@ export class BattlePart extends Object {
 	// 출력.
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
+	 * @param { import("../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	draw(graphic, popupRect) {
@@ -903,47 +1029,65 @@ export class BattlePart extends Object {
 		const opponentSlotY = opponentHandTopY + (OPPONENT_CARD_HEIGHT - SLOT_HEIGHT) * 0.5;
 		const opponentDiscardX = popupRect.x + SIDE_MARGIN;
 		const opponentDeckX = popupRect.x + popupRect.width - SIDE_MARGIN - SLOT_WIDTH;
-		this.drawPileSlot(canvasRenderingContext, opponentDiscardX, opponentSlotY, "무덤", this.#opponent.discard.length);
-		this.drawPileSlot(canvasRenderingContext, opponentDeckX, opponentSlotY, "저물대", this.#opponent.deck.length);
+		this.drawPileSlot(canvasRenderingContext, opponentDiscardX, opponentSlotY, "묘패", this.#opponent.discard.length);
+		this.drawPileSlot(canvasRenderingContext, opponentDeckX, opponentSlotY, "산패", this.#opponent.deck.length);
 		this.#opponentDiscardSlotCenter = { x: opponentDiscardX + SLOT_WIDTH * 0.5, y: opponentSlotY + SLOT_HEIGHT * 0.5 };
 		this.#opponentDeckSlotCenter = { x: opponentDeckX + SLOT_WIDTH * 0.5, y: opponentSlotY + SLOT_HEIGHT * 0.5 };
+
+		// 적 손패 영역 외곽선 (무덤/저물대 사이).
+		const opponentHandAreaX = popupRect.x + SIDE_MARGIN + SLOT_WIDTH + 8;
+		const opponentHandAreaWidth = popupRect.width - (SIDE_MARGIN + SLOT_WIDTH + 8) * 2;
+		canvasRenderingContext.strokeStyle = "#888899";
+		canvasRenderingContext.lineWidth = 1;
+		canvasRenderingContext.strokeRect(opponentHandAreaX, opponentSlotY, opponentHandAreaWidth, SLOT_HEIGHT);
 
 		// 적 초상화 (우측 상단).
 		const opponentPortraitX = popupRect.x + popupRect.width - PORTRAIT_WIDTH - SIDE_MARGIN;
 		const opponentPortraitY = opponentSlotY + SLOT_HEIGHT + 16;
-		this.drawPlayerPortrait(canvasRenderingContext, this.#opponent, opponentPortraitX, opponentPortraitY, PORTRAIT_WIDTH, PORTRAIT_HEIGHT, "적", false);
+		this.drawPlayerPortrait(canvasRenderingContext, this.#opponent, opponentPortraitX, opponentPortraitY, PORTRAIT_WIDTH, PORTRAIT_HEIGHT, false);
 
 		// 플레이어 손패 라인 + 무덤/덱.
 		const playerHandLineY = popupRect.y + popupRect.height - HAND_BOTTOM_MARGIN - PLAYER_CARD_HEIGHT * 0.5;
 		const playerSlotY = playerHandLineY - SLOT_HEIGHT * 0.5;
 		const playerDiscardX = popupRect.x + SIDE_MARGIN;
-		this.drawPileSlot(canvasRenderingContext, playerDiscardX, playerSlotY, "무덤", this.#player.discard.length);
+		this.drawPileSlot(canvasRenderingContext, playerDiscardX, playerSlotY, "묘패", this.#player.discard.length);
 		const playerDeckX = popupRect.x + popupRect.width - SIDE_MARGIN - SLOT_WIDTH;
-		this.drawPileSlot(canvasRenderingContext, playerDeckX, playerSlotY, "저물대", this.#player.deck.length);
+		this.drawPileSlot(canvasRenderingContext, playerDeckX, playerSlotY, "산패", this.#player.deck.length);
 		this.#playerDiscardSlotCenter = { x: playerDiscardX + SLOT_WIDTH * 0.5, y: playerSlotY + SLOT_HEIGHT * 0.5 };
 		this.#playerDeckSlotCenter = { x: playerDeckX + SLOT_WIDTH * 0.5, y: playerSlotY + SLOT_HEIGHT * 0.5 };
 
-		// 턴종료 버튼 (덱 위, 항상 표시. 비활성화 시 회색).
+		// 행동종료 + 전투포기 버튼 (덱 위. 위에서 아래 순서: 전투포기 → 행동종료).
 		const endTurnButtonX = playerDeckX + (SLOT_WIDTH - END_TURN_BUTTON_WIDTH) * 0.5;
-		const endTurnButtonY = playerSlotY - END_TURN_BUTTON_HEIGHT - 8;
+		const endTurnButtonY = playerSlotY - END_TURN_BUTTON_HEIGHT - 16;
+		const abandonButtonY = endTurnButtonY - END_TURN_BUTTON_HEIGHT - 8;
+		this.drawAbandonButton(canvasRenderingContext, endTurnButtonX, abandonButtonY, this.#endGameMessage === "");
 		this.drawEndTurnButton(canvasRenderingContext, endTurnButtonX, endTurnButtonY, this.isEndTurnButtonEnabled());
 
-		// 플레이어 초상화 (좌측, 손패 라인 위).
+		// 플레이어 초상화 (좌측, 손패 라인 위). 적과 동일하게 16 간격.
 		const playerPortraitX = popupRect.x + SIDE_MARGIN;
-		const playerPortraitY = playerSlotY - PORTRAIT_HEIGHT - 8;
-		this.drawPlayerPortrait(canvasRenderingContext, this.#player, playerPortraitX, playerPortraitY, PORTRAIT_WIDTH, PORTRAIT_HEIGHT, "당신", true);
+		const playerPortraitY = playerSlotY - PORTRAIT_HEIGHT - 16;
+		this.drawPlayerPortrait(canvasRenderingContext, this.#player, playerPortraitX, playerPortraitY, PORTRAIT_WIDTH, PORTRAIT_HEIGHT, true);
 
-		// 로그 (우측, 정보창 너비). 턴종료 버튼을 가리지 않도록 하단을 버튼 위에서 끊는다.
+		// 로그 (우측, 정보창 너비). 위/아래 모두 16 간격 (다른 영역들과 통일).
 		const logX = popupRect.x + popupRect.width - PORTRAIT_WIDTH - SIDE_MARGIN;
-		const logY = opponentPortraitY + PORTRAIT_HEIGHT + 12;
-		const logHeight = (endTurnButtonY - 12) - logY;
+		const logY = opponentPortraitY + PORTRAIT_HEIGHT + 16;
+		const logHeight = (abandonButtonY - 16) - logY;
 		if (logHeight > 60) {
 			this.drawLog(canvasRenderingContext, logX, logY, PORTRAIT_WIDTH, logHeight);
 		}
 
 		// 턴 표시는 화면에 띄우지 않고 로그에만 (endTurn 에서 appendLog 처리).
 
-		// 플레이어 손패 (좌→우 일렬, 우측이 위).
+		// 손패 영역 외곽선 (무덤/저물대 사이, 손패 라인).
+		const handAreaX = popupRect.x + SIDE_MARGIN + SLOT_WIDTH + 8;
+		const handAreaWidth = popupRect.width - (SIDE_MARGIN + SLOT_WIDTH + 8) * 2;
+		const handAreaY = playerSlotY;
+		const handAreaHeight = SLOT_HEIGHT;
+		canvasRenderingContext.strokeStyle = "#888899";
+		canvasRenderingContext.lineWidth = 1;
+		canvasRenderingContext.strokeRect(handAreaX, handAreaY, handAreaWidth, handAreaHeight);
+
+		// 플레이어 손패 (부채꼴, 우측이 위).
 		this.drawPlayerHand(canvasRenderingContext, popupRect, playerHandLineY);
 
 		// 사용 애니메이션.
@@ -995,7 +1139,8 @@ export class BattlePart extends Object {
 	 * @param { string } label
 	 * @param { boolean } isMe
 	 */
-	drawPlayerPortrait(canvasRenderingContext, playerState, x, y, width, height, label, isMe) {
+	drawPlayerPortrait(canvasRenderingContext, playerState, x, y, width, height, isMe) {
+		const label = playerState.nickname || (isMe ? "당신" : "적");
 		canvasRenderingContext.fillStyle = isMe ? "#1f3a5a" : "#5a1f33";
 		canvasRenderingContext.fillRect(x, y, width, height);
 		canvasRenderingContext.strokeStyle = "#ffffff";
@@ -1047,7 +1192,7 @@ export class BattlePart extends Object {
 		canvasRenderingContext.font = "bold 13px GyeonggiBatangBold";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(`${playerState.health}`, textX + textWidth * 0.5, healthBarY + barHeight * 0.5);
+		canvasRenderingContext.fillText(`${playerState.health}/${STARTING_HEALTH}`, textX + textWidth * 0.5, healthBarY + barHeight * 0.5);
 
 		// 영력바 (체력바와 동일 모양, 파란색).
 		const energyBarY = healthBarY + barHeight + 6;
@@ -1103,7 +1248,7 @@ export class BattlePart extends Object {
 		}
 		for (let i = 0; i < buffs.length; ++i) {
 			const buff = buffs[i];
-			const definition = this.findBuffDefinition(buff.id) || { displayName: buff.id, color: "#888888", icon: "?" };
+			const definition = this.findBuffDefinition(buff.id) || { displayName: buff.id, isDebuff: false, icon: "?" };
 			const row = System.Math.floor(i / BUFFS_PER_ROW);
 			const column = i % BUFFS_PER_ROW;
 			const buffX = x + column * (BUFF_ICON_SIZE + BUFF_ICON_GAP);
@@ -1111,10 +1256,16 @@ export class BattlePart extends Object {
 			if (buffY + BUFF_ICON_SIZE > y + height) {
 				break;
 			}
-			canvasRenderingContext.fillStyle = definition.color;
+			// 이득/손해만 색상 구분 (이득=청록, 손해=빨강).
+			const buffBackgroundColor = definition.isDebuff ? "#993344" : "#33885a";
+			canvasRenderingContext.fillStyle = buffBackgroundColor;
 			canvasRenderingContext.fillRect(buffX, buffY, BUFF_ICON_SIZE, BUFF_ICON_SIZE);
-			canvasRenderingContext.strokeStyle = "#ffffff";
-			canvasRenderingContext.lineWidth = 1;
+			// 누르고 있는 버프와 일치하면 노란 테두리, 아니면 흰 테두리.
+			const isPressed = this.#pressedBuffInfo !== null
+				&& this.#pressedBuffInfo.buff === buff
+				&& this.#pressedBuffInfo.side === (isMe ? PlayerSide.player : PlayerSide.opponent);
+			canvasRenderingContext.strokeStyle = isPressed ? "#ffcc33" : "#ffffff";
+			canvasRenderingContext.lineWidth = isPressed ? 2 : 1;
 			canvasRenderingContext.strokeRect(buffX, buffY, BUFF_ICON_SIZE, BUFF_ICON_SIZE);
 			canvasRenderingContext.fillStyle = "#ffffff";
 			canvasRenderingContext.font = "bold 14px GyeonggiBatangBold";
@@ -1291,10 +1442,12 @@ export class BattlePart extends Object {
 			height: PLAYER_CARD_HEIGHT,
 		};
 		// 영력 부족 여부 (현재 영력 < 카드 cost) → cost 원 빨간색으로 강조.
+		// 선택 진행 중이면 카드 외곽선 자체를 노랑으로 (별도 테두리 추가 X).
 		const definition = this.findCardDefinition(card.cardId);
 		const cost = definition && typeof definition.cost === "number" ? definition.cost : 0;
 		const isAffordable = this.#player.currentEnergy >= cost;
-		this.drawCard(canvasRenderingContext, card, localLayout, alpha, false, isAffordable);
+		const isSelected = card.selectionProgress >= 0.5;
+		this.drawCard(canvasRenderingContext, card, localLayout, alpha, false, isAffordable, isSelected);
 		canvasRenderingContext.restore();
 	}
 
@@ -1452,10 +1605,15 @@ export class BattlePart extends Object {
 	 * @param { number } alpha
 	 * @param { boolean } isFaceDown
 	 */
-	drawCard(canvasRenderingContext, card, cardLayout, alpha, isFaceDown, isAffordable) {
+	drawCard(canvasRenderingContext, card, cardLayout, alpha, isFaceDown, isAffordable, isSelected) {
 		if (typeof isAffordable !== "boolean") {
 			isAffordable = true;
 		}
+		if (typeof isSelected !== "boolean") {
+			isSelected = false;
+		}
+		const cardBorderColor = isSelected ? "#ffcc33" : "#ffffff";
+		const cardBorderWidth = isSelected ? 3 : 2;
 		canvasRenderingContext.save();
 		canvasRenderingContext.globalAlpha = alpha;
 		if (isFaceDown) {
@@ -1467,8 +1625,8 @@ export class BattlePart extends Object {
 			const sectEmblem = sectDefinition && sectDefinition.emblemColor ? sectDefinition.emblemColor : DEFAULT_SECT_EMBLEM_COLOR;
 			canvasRenderingContext.fillStyle = sectBackground;
 			canvasRenderingContext.fillRect(cardLayout.x, cardLayout.y, cardLayout.width, cardLayout.height);
-			canvasRenderingContext.strokeStyle = "#ffffff";
-			canvasRenderingContext.lineWidth = 2;
+			canvasRenderingContext.strokeStyle = cardBorderColor;
+			canvasRenderingContext.lineWidth = cardBorderWidth;
 			canvasRenderingContext.strokeRect(cardLayout.x, cardLayout.y, cardLayout.width, cardLayout.height);
 			canvasRenderingContext.fillStyle = sectEmblem;
 			const centerX = cardLayout.x + cardLayout.width * 0.5;
@@ -1492,11 +1650,11 @@ export class BattlePart extends Object {
 			const gradeDefinition = this.findGradeDefinition(grade);
 			const gradeColor = gradeDefinition && gradeDefinition.color ? gradeDefinition.color : DEFAULT_GRADE_COLOR;
 
-			// 1) 배경 + 외곽선 (클리핑 없음).
+			// 1) 배경 + 외곽선 (클리핑 없음). 선택 카드면 외곽선 노랑 + 굵게.
 			canvasRenderingContext.fillStyle = cardColor;
 			canvasRenderingContext.fillRect(cardLayout.x, cardLayout.y, cardLayout.width, cardLayout.height);
-			canvasRenderingContext.strokeStyle = "#ffffff";
-			canvasRenderingContext.lineWidth = 2;
+			canvasRenderingContext.strokeStyle = cardBorderColor;
+			canvasRenderingContext.lineWidth = cardBorderWidth;
 			canvasRenderingContext.strokeRect(cardLayout.x, cardLayout.y, cardLayout.width, cardLayout.height);
 
 			const titleFontSize = System.Math.max(11, System.Math.floor(cardLayout.width * 0.16));
@@ -1652,6 +1810,20 @@ export class BattlePart extends Object {
 	 * @param { number } y
 	 * @param { boolean } enabled
 	 */
+	drawAbandonButton(canvasRenderingContext, x, y, enabled) {
+		this.#abandonButtonRect = { x: x, y: y, width: END_TURN_BUTTON_WIDTH, height: END_TURN_BUTTON_HEIGHT };
+		canvasRenderingContext.fillStyle = enabled ? "#993333" : "#3a2a2a";
+		canvasRenderingContext.fillRect(x, y, END_TURN_BUTTON_WIDTH, END_TURN_BUTTON_HEIGHT);
+		canvasRenderingContext.strokeStyle = enabled ? "#ffffff" : "#666666";
+		canvasRenderingContext.lineWidth = 2;
+		canvasRenderingContext.strokeRect(x, y, END_TURN_BUTTON_WIDTH, END_TURN_BUTTON_HEIGHT);
+		canvasRenderingContext.fillStyle = enabled ? "#ffffff" : "#888888";
+		canvasRenderingContext.font = "bold 16px GyeonggiBatangBold, sans-serif";
+		canvasRenderingContext.textAlign = "center";
+		canvasRenderingContext.textBaseline = "middle";
+		canvasRenderingContext.fillText("전투 포기", x + END_TURN_BUTTON_WIDTH * 0.5, y + END_TURN_BUTTON_HEIGHT * 0.5);
+	}
+
 	drawEndTurnButton(canvasRenderingContext, x, y, enabled) {
 		this.#endTurnButtonRect = { x: x, y: y, width: END_TURN_BUTTON_WIDTH, height: END_TURN_BUTTON_HEIGHT };
 		canvasRenderingContext.fillStyle = enabled ? "#aa6633" : "#3a3a3a";
@@ -1670,7 +1842,7 @@ export class BattlePart extends Object {
 	// 손패 카드 hit test. 우측 카드가 위에 있으므로 인덱스 큰 쪽부터.
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
+	 * @param { import("../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
 	 * @returns { number }
 	 */
 	findHandCardIndexAtPosition(viewInputPosition) {
@@ -1687,7 +1859,7 @@ export class BattlePart extends Object {
 	// 회전/스케일 적용된 카드 안에 좌표가 있는지.
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
+	 * @param { import("../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
 	 * @param { { centerX: number, centerY: number, rotation: number, scale: number } } layoutEntry
 	 * @returns { boolean }
 	 */
@@ -1707,7 +1879,7 @@ export class BattlePart extends Object {
 	// 좌표가 사각 영역 내부인지.
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
+	 * @param { import("../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
 	 * @param { { x: number, y: number, width: number, height: number } } rect
 	 * @returns { boolean }
 	 */
@@ -1721,7 +1893,7 @@ export class BattlePart extends Object {
 	// 버프 layout 배열 안에서 hit. 없으면 null.
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
+	 * @param { import("../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
 	 * @param { Array<{ buff: { id: string, value: number }, x: number, y: number, width: number, height: number }> } buffLayouts
 	 * @returns { { buff: { id: string, value: number }, x: number, y: number, width: number, height: number } | null }
 	 */
@@ -1764,7 +1936,8 @@ export class BattlePart extends Object {
 
 		canvasRenderingContext.fillStyle = "rgba(20, 20, 30, 0.95)";
 		canvasRenderingContext.fillRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
-		canvasRenderingContext.strokeStyle = definition.color;
+		const tooltipStrokeColor = definition.isDebuff ? "#993344" : "#33885a";
+		canvasRenderingContext.strokeStyle = tooltipStrokeColor;
 		canvasRenderingContext.lineWidth = 2;
 		canvasRenderingContext.strokeRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
 
@@ -1839,7 +2012,9 @@ export class BattlePart extends Object {
 		if (tooltipX > maxX) {
 			tooltipX = maxX;
 		}
-		let tooltipY = cardLayoutEntry.centerY - tooltipHeight * 0.5;
+		// 툴팁의 top 을 카드 top 에 맞추고 아래로 늘어나게 (효과 줄 수에 따라 height 가 변동).
+		const cardHalfHeight = PLAYER_CARD_HEIGHT * cardLayoutEntry.scale * 0.5;
+		let tooltipY = cardLayoutEntry.centerY - cardHalfHeight;
 		const minY = popupRect.y + 8;
 		const maxY = popupRect.y + popupRect.height - tooltipHeight - 8;
 		if (tooltipY < minY) {
@@ -1885,7 +2060,7 @@ export class BattlePart extends Object {
 					break;
 				}
 				case "block": {
-					lines.push(`${effect.value}만큼 방어한다`);
+					lines.push(`${effect.value}의 피해를 방어한다`);
 					break;
 				}
 				case "heal": {

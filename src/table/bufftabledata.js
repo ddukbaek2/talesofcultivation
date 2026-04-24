@@ -12,13 +12,15 @@ export class BuffTableData extends Object {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
-	/** @type { string } */ id;
+	/** @type { number } */ id;
+	/** @type { string } */ key;
 	/** @type { string } */ displayName;
 	/** @type { string } */ color;
 	/** @type { string } */ icon;
 	/** @type { string } */ description;
 	/** @type { boolean } */ isTurnTemporary;
 	/** @type { boolean } */ decayPerTurn;
+	/** @type { boolean } */ isDebuff;
 
 	//==============================================================================
 	// 생성. data = bufftable.json 의 한 객체.
@@ -28,12 +30,14 @@ export class BuffTableData extends Object {
 	 */
 	constructor(data) {
 		super();
-		this.id = data.id || "";
+		this.id = typeof data.id === "number" ? data.id : 0;
+		this.key = data.key || "";
 		this.displayName = data.displayName || "";
 		this.color = data.color || "";
 		this.icon = data.icon || "";
 		this.description = data.description || "";
 		this.isTurnTemporary = data.isTurnTemporary === true;
 		this.decayPerTurn = data.decayPerTurn === true;
+		this.isDebuff = data.isDebuff === true;
 	}
 }
