@@ -16,15 +16,17 @@ import { DEVTools } from "../libs/vanilla.js/src/misc/devtools.js";
 import { ViewScaleMode } from "../libs/vanilla.js/src/core/viewmanager.js";
 import { Colors } from "../libs/vanilla.js/src/base/colors.js";
 import { MergeGame } from "./minigame/mergegame.js";
-import { CardBattleGame } from "./minigame/cardbattlegame.js";
+import { BattlePart } from "./minigame/battlepart.js";
+import { NovelPart } from "./minigame/novelpart.js";
 
 
 //==============================================================================
-// 활성 미니게임 식별자.
+// 활성 파트 식별자.
 //==============================================================================
-const MinigameKey = System.Object.freeze({
+const PartKey = System.Object.freeze({
+	novel: "novel",
+	battle: "battle",
 	merge: "merge",
-	cardBattle: "cardBattle",
 });
 
 
@@ -70,10 +72,12 @@ export class TalesOfCultivation extends Scene {
 	/** @private @type { number } */ #totalAssetCount;
 	/** @private @type { string } */ #loadingAssetPath;
 	/** @private @type { MergeGame } */ #mergeGame;
-	/** @private @type { CardBattleGame } */ #cardBattleGame;
-	/** @private @type { string } */ #activeMinigameKey;
+	/** @private @type { BattlePart } */ #battlePart;
+	/** @private @type { NovelPart } */ #novelPart;
+	/** @private @type { string } */ #activePartKey;
 	/** @private @type { boolean } */ #prevIsKey1;
 	/** @private @type { boolean } */ #prevIsKey2;
+	/** @private @type { boolean } */ #prevIsKey3;
 
 	//==============================================================================
 	// 생성.
@@ -103,13 +107,16 @@ export class TalesOfCultivation extends Scene {
 		this.#loadedAssetCount = 0;
 		this.#totalAssetCount = 0;
 		this.#loadingAssetPath = "";
-		// 미니게임 (팝업으로 표시됨). 활성 식별자는 키 1/2 또는 setActiveMinigameKey 로 변경.
-		// 기본값: 카드 배틀 (1번).
+		// 파트 (팝업으로 표시됨). 게임 시작은 노벨 파트.
+		// 노벨 끝나면 자동으로 전투 파트로 전환.
+		// 키 1/2/3 또는 setActivePartKey 로 강제 전환 가능.
 		this.#mergeGame = new MergeGame();
-		this.#cardBattleGame = new CardBattleGame();
-		this.#activeMinigameKey = MinigameKey.cardBattle;
+		this.#battlePart = new BattlePart();
+		this.#novelPart = new NovelPart();
+		this.#activePartKey = PartKey.novel;
 		this.#prevIsKey1 = false;
 		this.#prevIsKey2 = false;
+		this.#prevIsKey3 = false;
 	}
 
 	//==============================================================================
@@ -163,19 +170,19 @@ export class TalesOfCultivation extends Scene {
 		// 카드 정의를 마지막에 주입해야 reset 호출 시 등급/종파/버프 정의가 이미 들어있음.
 		const gradeTableAsset = this.getLoadedJsonAsset(JsonId.gradeTable);
 		if (gradeTableAsset && System.Array.isArray(gradeTableAsset.data)) {
-			this.#cardBattleGame.setGradeDefinitions(gradeTableAsset.data);
+			this.#battlePart.setGradeDefinitions(gradeTableAsset.data);
 		}
 		const sectTableAsset = this.getLoadedJsonAsset(JsonId.sectTable);
 		if (sectTableAsset && System.Array.isArray(sectTableAsset.data)) {
-			this.#cardBattleGame.setSectDefinitions(sectTableAsset.data);
+			this.#battlePart.setSectDefinitions(sectTableAsset.data);
 		}
 		const buffTableAsset = this.getLoadedJsonAsset(JsonId.buffTable);
 		if (buffTableAsset && System.Array.isArray(buffTableAsset.data)) {
-			this.#cardBattleGame.setBuffDefinitions(buffTableAsset.data);
+			this.#battlePart.setBuffDefinitions(buffTableAsset.data);
 		}
 		const cardTableAsset = this.getLoadedJsonAsset(JsonId.cardTable);
 		if (cardTableAsset && System.Array.isArray(cardTableAsset.data)) {
-			this.#cardBattleGame.setCardDefinitions(cardTableAsset.data);
+			this.#battlePart.setCardDefinitions(cardTableAsset.data);
 		}
 	}
 
@@ -197,30 +204,40 @@ export class TalesOfCultivation extends Scene {
 		// 개발자 도구 갱신 (항상 최우선).
 		this.#devtools.tick(unscaledTimeDelta);
 
-		// 미니게임 전환 (1: 카드 배틀, 2: 머지). just-pressed 트리거.
-		// setActiveMinigameKey 를 거치므로 전환 시 해당 게임이 처음 상태로 reset.
+		// 파트 강제 전환 (1: 노벨, 2: 전투, 3: 머지). just-pressed 트리거.
 		const inputManager = engine.getInputManager();
 		const isKey1 = inputManager.isKeyPressed("Digit1");
 		const isKey2 = inputManager.isKeyPressed("Digit2");
+		const isKey3 = inputManager.isKeyPressed("Digit3");
 		if (isKey1 && !this.#prevIsKey1) {
-			this.setActiveMinigameKey(MinigameKey.cardBattle);
+			this.setActivePartKey(PartKey.novel);
 		}
 		if (isKey2 && !this.#prevIsKey2) {
-			this.setActiveMinigameKey(MinigameKey.merge);
+			this.setActivePartKey(PartKey.battle);
+		}
+		if (isKey3 && !this.#prevIsKey3) {
+			this.setActivePartKey(PartKey.merge);
 		}
 		this.#prevIsKey1 = isKey1;
 		this.#prevIsKey2 = isKey2;
+		this.#prevIsKey3 = isKey3;
 
-		// 활성 미니게임 갱신 (780x780 팝업 영역 안에서). 데브툴 패널 위에서는 입력 차단.
+		// 활성 파트 갱신 (780x780 팝업 영역 안에서). 데브툴 패널 위에서는 입력 차단.
 		if (!this.isHierarchyCapturingInput()) {
 			const viewManager = engine.getViewManager();
 			const viewSize = viewManager.getViewSize();
 			const popupRect = this.computeMinigamePopupRect(viewSize);
-			if (this.#activeMinigameKey === MinigameKey.merge) {
-				this.#mergeGame.tick(timeDelta, inputManager, popupRect);
+			if (this.#activePartKey === PartKey.novel) {
+				this.#novelPart.tick(timeDelta, inputManager, popupRect);
+				if (this.#novelPart.isFinished()) {
+					this.setActivePartKey(PartKey.battle);
+				}
 			}
-			else if (this.#activeMinigameKey === MinigameKey.cardBattle) {
-				this.#cardBattleGame.tick(timeDelta, inputManager, popupRect);
+			else if (this.#activePartKey === PartKey.battle) {
+				this.#battlePart.tick(timeDelta, inputManager, popupRect);
+			}
+			else if (this.#activePartKey === PartKey.merge) {
+				this.#mergeGame.tick(timeDelta, inputManager, popupRect);
 			}
 		}
 	}
@@ -278,12 +295,15 @@ export class TalesOfCultivation extends Scene {
 		canvasRenderingContext.lineWidth = 3;
 		canvasRenderingContext.strokeRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
 
-		// 활성 미니게임 출력 (팝업 내부에 한정).
-		if (this.#activeMinigameKey === MinigameKey.merge) {
-			this.#mergeGame.draw(graphic, popupRect);
+		// 활성 파트 출력 (팝업 내부에 한정).
+		if (this.#activePartKey === PartKey.novel) {
+			this.#novelPart.draw(graphic, popupRect);
 		}
-		else if (this.#activeMinigameKey === MinigameKey.cardBattle) {
-			this.#cardBattleGame.draw(graphic, popupRect);
+		else if (this.#activePartKey === PartKey.battle) {
+			this.#battlePart.draw(graphic, popupRect);
+		}
+		else if (this.#activePartKey === PartKey.merge) {
+			this.#mergeGame.draw(graphic, popupRect);
 		}
 	}
 
@@ -302,19 +322,22 @@ export class TalesOfCultivation extends Scene {
 	}
 
 	//==============================================================================
-	// 활성 미니게임 식별자 설정. 전환 시 대상 미니게임을 처음 상태로 reset.
-	// 외부 메뉴/내비게이션 또는 키 1/2 핸들러에서 호출.
+	// 활성 파트 식별자 설정. 전환 시 대상 파트를 처음 상태로 reset.
+	// 외부 메뉴/내비게이션 또는 키 1/2/3 핸들러 / 노벨 종료 자동 전환에서 호출.
 	//==============================================================================
 	/**
-	 * @param { string } minigameKey
+	 * @param { string } partKey
 	 */
-	setActiveMinigameKey(minigameKey) {
-		this.#activeMinigameKey = minigameKey;
-		if (minigameKey === MinigameKey.merge) {
-			this.#mergeGame.reset();
+	setActivePartKey(partKey) {
+		this.#activePartKey = partKey;
+		if (partKey === PartKey.novel) {
+			this.#novelPart.reset();
 		}
-		else if (minigameKey === MinigameKey.cardBattle) {
-			this.#cardBattleGame.reset();
+		else if (partKey === PartKey.battle) {
+			this.#battlePart.reset();
+		}
+		else if (partKey === PartKey.merge) {
+			this.#mergeGame.reset();
 		}
 	}
 

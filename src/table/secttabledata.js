@@ -5,8 +5,8 @@ import { Object } from "../../libs/vanilla.js/src/base/object.js";
 
 
 //==============================================================================
-// SectTableData (secttable.json 의 한 객체에 대응). xlsx-to-classes 가 자동 생성.
-// 수동 편집 금지 — xlsx 의 컬럼/타입을 바꾼 뒤 "data classes" 를 다시 실행할 것.
+// SectTableData (secttable.json 의 한 객체에 대응). vanilla.js excel 도구가 자동 생성.
+// 수동 편집 금지 — xlsx 의 컬럼/타입을 바꾼 뒤 클래스 생성을 다시 실행할 것.
 //==============================================================================
 export class SectTableData extends Object {
 	//==============================================================================
