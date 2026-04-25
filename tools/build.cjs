@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 //==============================================================================
 // 통합 빌드 드라이버.
-// 루트 buildmanifest.json 을 읽고 모든 플랫폼/엔트리의 빌드 로직을 하나의 진입점으로 실행.
+// tools/buildmanifest.json 을 읽고 모든 플랫폼/엔트리의 빌드 로직을 하나의 진입점으로 실행.
 //
 // 사용법:
-//   node build.cjs <platform> <entry> [target] [extra]
-//   node build.cjs list
+//   node tools/build.cjs <platform> <entry> [target] [extra]
+//   node tools/build.cjs list
 //
 // 지원 엔트리:
 //   web bundle <target>                     : 특정 타깃 웹 번들 생성.
@@ -22,8 +22,8 @@ const fileSystem = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
 
-const projectRoot = __dirname;
-const manifestFilePath = path.resolve(projectRoot, "buildmanifest.json");
+const projectRoot = path.resolve(__dirname, "..");
+const manifestFilePath = path.resolve(__dirname, "buildmanifest.json");
 const vanillaProjectModule = require(path.join(projectRoot, "libs", "vanilla.js", "tools", "project.cjs"));
 
 
@@ -274,18 +274,18 @@ function utilityConvertQuotes() {
 //==============================================================================
 function printUsage() {
 	console.log("사용법:");
-	console.log("  node build.cjs <platform> <entry> [target] [extra]");
-	console.log("  node build.cjs list");
+	console.log("  node tools/build.cjs <platform> <entry> [target] [extra]");
+	console.log("  node tools/build.cjs list");
 	console.log("");
 	console.log("예시:");
-	console.log("  node build.cjs web bundle talesofcultivation");
-	console.log("  node build.cjs web bundle-all");
-	console.log("  node build.cjs web deploy");
-	console.log("  node build.cjs web check");
-	console.log("  node build.cjs data tables   (xlsx → json 변환)");
-	console.log("  node build.cjs data classes  (xlsx → src/table 데이터 클래스 생성)");
-	console.log("  node build.cjs data all      (json + classes 동시 생성)");
-	console.log("  node build.cjs utility check-syntax");
+	console.log("  node tools/build.cjs web bundle talesofcultivation");
+	console.log("  node tools/build.cjs web bundle-all");
+	console.log("  node tools/build.cjs web deploy");
+	console.log("  node tools/build.cjs web check");
+	console.log("  node tools/build.cjs data tables   (xlsx → json 변환)");
+	console.log("  node tools/build.cjs data classes  (xlsx → src/table 데이터 클래스 생성)");
+	console.log("  node tools/build.cjs data all      (json + classes 동시 생성)");
+	console.log("  node tools/build.cjs utility check-syntax");
 }
 
 const BUILD_ENTRY_LIST = [

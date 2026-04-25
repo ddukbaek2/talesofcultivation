@@ -18,6 +18,7 @@ import { Colors } from "../libs/vanilla.js/src/base/colors.js";
 import { MergeGame } from "./minigame/mergegame.js";
 import { BattlePart } from "./part/battlepart.js";
 import { NovelPart } from "./part/novelpart.js";
+import { AudioBeepPlayer } from "./audiobeepplayer.js";
 
 
 //==============================================================================
@@ -75,6 +76,7 @@ export class TalesOfCultivation extends Scene {
 	/** @private @type { MergeGame } */ #mergeGame;
 	/** @private @type { BattlePart } */ #battlePart;
 	/** @private @type { NovelPart } */ #novelPart;
+	/** @private @type { AudioBeepPlayer } */ #audioBeepPlayer;
 	/** @private @type { string } */ #activePartKey;
 	/** @private @type { boolean } */ #prevIsKey1;
 	/** @private @type { boolean } */ #prevIsKey2;
@@ -114,6 +116,7 @@ export class TalesOfCultivation extends Scene {
 		this.#mergeGame = new MergeGame();
 		this.#battlePart = new BattlePart();
 		this.#novelPart = new NovelPart();
+		this.#audioBeepPlayer = null;
 		this.#activePartKey = PartKey.novel;
 		this.#prevIsKey1 = false;
 		this.#prevIsKey2 = false;
@@ -196,6 +199,14 @@ export class TalesOfCultivation extends Scene {
 		}
 		// 전투 셋업: 한두백 (10000001) vs 검종 장로 (10000002).
 		this.#battlePart.setBattleCharacters(10000001, 10000002);
+
+		// 오디오 비프 플레이어 생성 후 각 파트/미니게임에 주입 (파일 없는 효과음 합성).
+		const audioManager = engine.getAudioManager();
+		const audioContext = audioManager.getAudioContext();
+		this.#audioBeepPlayer = new AudioBeepPlayer(audioContext);
+		this.#novelPart.setAudioBeepPlayer(this.#audioBeepPlayer);
+		this.#battlePart.setAudioBeepPlayer(this.#audioBeepPlayer);
+		this.#mergeGame.setAudioBeepPlayer(this.#audioBeepPlayer);
 
 		// 노벨 대사 테이블 주입 후 인트로 장면 시작.
 		const dialogueTableAsset = this.getLoadedJsonAsset(JsonId.dialogueTable);
@@ -327,17 +338,15 @@ export class TalesOfCultivation extends Scene {
 	}
 
 	//==============================================================================
-	// 미니게임 팝업 사각 영역 계산 (뷰 중앙 780x780 정사각).
+	// 미니게임 팝업 사각 영역 계산.
+	// 세로 800 기준에 가로는 뷰 폭 전체를 사용하는 늘여붙이기 방식.
 	//==============================================================================
 	/**
 	 * @param { Vector2 } viewSize
 	 * @returns { { x: number, y: number, width: number, height: number } }
 	 */
 	computeMinigamePopupRect(viewSize) {
-		const popupSize = 780;
-		const popupX = System.Math.floor((viewSize.x - popupSize) * 0.5);
-		const popupY = System.Math.floor((viewSize.y - popupSize) * 0.5);
-		return { x: popupX, y: popupY, width: popupSize, height: popupSize };
+		return { x: 0, y: 0, width: viewSize.x, height: viewSize.y };
 	}
 
 	//==============================================================================

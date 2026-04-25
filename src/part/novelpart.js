@@ -3,6 +3,7 @@
 //==============================================================================
 const System = globalThis;
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
+import { AudioBeepPlayer, BeepWaveform } from "../audiobeepplayer.js";
 
 
 //==============================================================================
@@ -37,6 +38,7 @@ export class NovelPart extends Object {
 	/** @private @type { number } */ #revealedChars;
 	/** @private @type { boolean } */ #isFinished;
 	/** @private @type { boolean } */ #wasTouchPressed;
+	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
 
 	//==============================================================================
 	// 생성.
@@ -50,6 +52,7 @@ export class NovelPart extends Object {
 		this.#revealedChars = 0;
 		this.#isFinished = false;
 		this.#wasTouchPressed = false;
+		this.#audioBeepPlayer = null;
 	}
 
 	//==============================================================================
@@ -126,6 +129,7 @@ export class NovelPart extends Object {
 
 		// 타이핑 진행.
 		const currentDialogue = this.#dialogues[this.#currentIndex];
+		const previousRevealedCharIndex = System.Math.floor(this.#revealedChars);
 		if (this.#revealedChars < currentDialogue.text.length) {
 			this.#revealedChars += TYPING_CHARS_PER_SECOND * timeDelta;
 			if (this.#revealedChars > currentDialogue.text.length) {
@@ -133,22 +137,46 @@ export class NovelPart extends Object {
 			}
 		}
 
+		// 새로 드러난 글자마다 타이핑 비프 재생 (공백/구두점 제외).
+		const nextRevealedCharIndex = System.Math.floor(this.#revealedChars);
+		if (nextRevealedCharIndex > previousRevealedCharIndex) {
+			const typingAudioBeepPlayer = this.getAudioBeepPlayer();
+			if (typingAudioBeepPlayer) {
+				for (let charIndex = previousRevealedCharIndex; charIndex < nextRevealedCharIndex; ++charIndex) {
+					const typedCharacter = currentDialogue.text.charAt(charIndex);
+					if (this.isTypingBeepCharacter(typedCharacter)) {
+						typingAudioBeepPlayer.playTone(720, 18, BeepWaveform.square, 0.12, 0.0);
+					}
+				}
+			}
+		}
+
 		// 입력 처리 (just-pressed 트리거).
 		const isPressed = inputManager.isTouchPressed();
 		if (isPressed && !this.#wasTouchPressed) {
 			const fullyRevealed = this.#revealedChars >= currentDialogue.text.length;
+			const clickAudioBeepPlayer = this.getAudioBeepPlayer();
 			if (!fullyRevealed) {
 				// 타이핑 중이면 즉시 완성.
 				this.#revealedChars = currentDialogue.text.length;
+				if (clickAudioBeepPlayer) {
+					clickAudioBeepPlayer.playClick();
+				}
 			}
 			else {
 				// 다음 대사 또는 종료.
 				if (this.#currentIndex + 1 < this.#dialogues.length) {
 					++this.#currentIndex;
 					this.#revealedChars = 0;
+					if (clickAudioBeepPlayer) {
+						clickAudioBeepPlayer.playClick();
+					}
 				}
 				else {
 					this.#isFinished = true;
+					if (clickAudioBeepPlayer) {
+						clickAudioBeepPlayer.playConfirm();
+					}
 				}
 			}
 		}
@@ -272,5 +300,43 @@ export class NovelPart extends Object {
 			lines.push(currentLine);
 		}
 		return lines;
+	}
+
+	//==============================================================================
+	// 오디오 비프 플레이어 설정. 주입되지 않으면 비프음 없이 동작.
+	//==============================================================================
+	/**
+	 * @param { AudioBeepPlayer } audioBeepPlayer
+	 */
+	setAudioBeepPlayer(audioBeepPlayer) {
+		this.#audioBeepPlayer = audioBeepPlayer;
+	}
+
+	//==============================================================================
+	// 오디오 비프 플레이어 반환.
+	//==============================================================================
+	/**
+	 * @returns { AudioBeepPlayer | null }
+	 */
+	getAudioBeepPlayer() {
+		return this.#audioBeepPlayer;
+	}
+
+	//==============================================================================
+	// 타이핑 비프 대상 글자 여부 (공백/개행/구두점은 묵음 처리).
+	//==============================================================================
+	/**
+	 * @param { string } character
+	 * @returns { boolean }
+	 */
+	isTypingBeepCharacter(character) {
+		if (character === " " || character === "\n" || character === "\t") {
+			return false;
+		}
+		const punctuationCharacters = ".,!?:;\"'`~()[]{}<>…—·";
+		if (punctuationCharacters.indexOf(character) >= 0) {
+			return false;
+		}
+		return true;
 	}
 }

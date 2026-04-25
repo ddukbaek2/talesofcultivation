@@ -3,6 +3,7 @@
 //==============================================================================
 const System = globalThis;
 import { Vector2 } from "../../libs/vanilla.js/src/base/vector2.js";
+import { AudioBeepPlayer } from "../audiobeepplayer.js";
 
 
 //==============================================================================
@@ -76,6 +77,7 @@ export class MergeGame {
 	/** @private @type { Tile | null } */ #draggedTile;
 	/** @private @type { Vector2 } */ #dragOffset;
 	/** @private @type { boolean } */ #isDragging;
+	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
 
 	//==============================================================================
 	// 생성.
@@ -92,6 +94,7 @@ export class MergeGame {
 		this.#draggedTile = null;
 		this.#dragOffset = Vector2.zero();
 		this.#isDragging = false;
+		this.#audioBeepPlayer = null;
 		this.reset();
 	}
 
@@ -181,6 +184,10 @@ export class MergeGame {
 				this.#dragOffset = viewInputPosition.subtract(pickedTile.position);
 				this.#grid[pickedTile.gridX][pickedTile.gridY] = null;
 				this.#isDragging = true;
+				const pickAudioBeepPlayer = this.getAudioBeepPlayer();
+				if (pickAudioBeepPlayer) {
+					pickAudioBeepPlayer.playClick();
+				}
 			}
 		}
 
@@ -199,11 +206,20 @@ export class MergeGame {
 			const targetGridPoint = this.worldPositionToGridPoint(viewInputPosition);
 			const targetTile = targetGridPoint ? this.#grid[targetGridPoint.x][targetGridPoint.y] : null;
 
+			const dropAudioBeepPlayer = this.getAudioBeepPlayer();
 			if (targetTile && targetTile.id !== releasedTile.id && targetTile.level === releasedTile.level && targetTile.level < MAX_LEVEL) {
 				// 합치기: 대상 타일을 한 단계 승급, 드롭한 타일 제거.
 				this.#tiles = this.#tiles.filter((t) => t.id !== releasedTile.id);
 				++targetTile.level;
 				this.#score += targetTile.level * 10;
+				if (dropAudioBeepPlayer) {
+					if (targetTile.level >= MAX_LEVEL) {
+						dropAudioBeepPlayer.playSuccess();
+					}
+					else {
+						dropAudioBeepPlayer.playConfirm();
+					}
+				}
 			}
 			else if (targetGridPoint && !targetTile) {
 				// 빈 칸으로 이동.
@@ -211,11 +227,17 @@ export class MergeGame {
 				releasedTile.gridY = targetGridPoint.y;
 				releasedTile.position = this.gridToWorldPosition(targetGridPoint.x, targetGridPoint.y);
 				this.#grid[targetGridPoint.x][targetGridPoint.y] = releasedTile;
+				if (dropAudioBeepPlayer) {
+					dropAudioBeepPlayer.playTone(520, 24, "sine", 0.12, 0.0);
+				}
 			}
 			else {
 				// 원래 자리로 복귀 (보드 밖이거나 같은 타일과 합칠 수 없음).
 				this.#grid[releasedTile.gridX][releasedTile.gridY] = releasedTile;
 				releasedTile.position = this.gridToWorldPosition(releasedTile.gridX, releasedTile.gridY);
+				if (dropAudioBeepPlayer) {
+					dropAudioBeepPlayer.playCancel();
+				}
 			}
 		}
 	}
@@ -369,5 +391,25 @@ export class MergeGame {
 		const x = this.#boardX + gridX * this.#cellSize + this.#cellSize * 0.5;
 		const y = this.#boardY + gridY * this.#cellSize + this.#cellSize * 0.5;
 		return Vector2.create(x, y);
+	}
+
+	//==============================================================================
+	// 오디오 비프 플레이어 설정. 주입되지 않으면 비프음 없이 동작.
+	//==============================================================================
+	/**
+	 * @param { AudioBeepPlayer } audioBeepPlayer
+	 */
+	setAudioBeepPlayer(audioBeepPlayer) {
+		this.#audioBeepPlayer = audioBeepPlayer;
+	}
+
+	//==============================================================================
+	// 오디오 비프 플레이어 반환.
+	//==============================================================================
+	/**
+	 * @returns { AudioBeepPlayer | null }
+	 */
+	getAudioBeepPlayer() {
+		return this.#audioBeepPlayer;
 	}
 }

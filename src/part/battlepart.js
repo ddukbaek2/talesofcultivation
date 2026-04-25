@@ -3,6 +3,7 @@
 //==============================================================================
 const System = globalThis;
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
+import { AudioBeepPlayer } from "../audiobeepplayer.js";
 
 
 //==============================================================================
@@ -167,6 +168,7 @@ export class BattlePart extends Object {
 	/** @private @type { { x: number, y: number } | null } */ #opponentDeckSlotCenter;
 	/** @private @type { { x: number, y: number } | null } */ #opponentDiscardSlotCenter;
 	/** @private @type { Array<{ text: string, color: string, x: number, y: number, time: number }> } */ #floatingTexts;
+	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
 
 	//==============================================================================
 	// 생성.
@@ -205,6 +207,7 @@ export class BattlePart extends Object {
 		this.#opponentDeckSlotCenter = null;
 		this.#opponentDiscardSlotCenter = null;
 		this.#floatingTexts = [];
+		this.#audioBeepPlayer = null;
 	}
 
 	//==============================================================================
@@ -689,11 +692,22 @@ export class BattlePart extends Object {
 	// 양쪽 체력 검사 후 종료 메시지 설정.
 	//==============================================================================
 	checkGameOver() {
+		if (this.#endGameMessage !== "") {
+			return;
+		}
 		if (this.#player.health <= 0) {
 			this.#endGameMessage = "패배!";
+			const loseAudioBeepPlayer = this.getAudioBeepPlayer();
+			if (loseAudioBeepPlayer) {
+				loseAudioBeepPlayer.playError();
+			}
 		}
 		else if (this.#opponent.health <= 0) {
 			this.#endGameMessage = "승리!";
+			const winAudioBeepPlayer = this.getAudioBeepPlayer();
+			if (winAudioBeepPlayer) {
+				winAudioBeepPlayer.playSuccess();
+			}
 		}
 	}
 
@@ -858,6 +872,10 @@ export class BattlePart extends Object {
 
 		if (this.#endGameMessage !== "") {
 			if (inputManager.isTouchPressed()) {
+				const resetAudioBeepPlayer = this.getAudioBeepPlayer();
+				if (resetAudioBeepPlayer) {
+					resetAudioBeepPlayer.playClick();
+				}
 				this.reset();
 			}
 			return;
@@ -879,12 +897,20 @@ export class BattlePart extends Object {
 			// 1) 턴종료 / 전투포기 버튼.
 			if (this.#endTurnButtonRect && this.isInsideRect(viewInputPosition, this.#endTurnButtonRect)) {
 				if (this.isEndTurnButtonEnabled()) {
+					const endTurnAudioBeepPlayer = this.getAudioBeepPlayer();
+					if (endTurnAudioBeepPlayer) {
+						endTurnAudioBeepPlayer.playClick();
+					}
 					this.endTurn();
 				}
 				return;
 			}
 			if (this.#abandonButtonRect && this.isInsideRect(viewInputPosition, this.#abandonButtonRect)) {
 				if (this.#endGameMessage === "") {
+					const abandonAudioBeepPlayer = this.getAudioBeepPlayer();
+					if (abandonAudioBeepPlayer) {
+						abandonAudioBeepPlayer.playCancel();
+					}
 					this.appendLog("당신: 전투 포기");
 					this.#player.health = 0;
 					this.checkGameOver();
@@ -896,6 +922,7 @@ export class BattlePart extends Object {
 			const pickedHandIndex = this.findHandCardIndexAtPosition(viewInputPosition);
 			if (pickedHandIndex >= 0) {
 				const pickedCard = this.#player.hand[pickedHandIndex];
+				const cardAudioBeepPlayer = this.getAudioBeepPlayer();
 				if (this.#selectedCardId === pickedCard.id) {
 					// 같은 카드 두 번째 클릭 → 사용 (영력 체크는 playCard 안에서).
 					const layoutEntry = this.#playerHandLayouts.find((entry) => entry.card.id === pickedCard.id);
@@ -905,15 +932,24 @@ export class BattlePart extends Object {
 					if (success) {
 						this.addFloatingText("사용!", "#5cff7c", feedbackX, feedbackY);
 						this.#selectedCardId = null;
+						if (cardAudioBeepPlayer) {
+							cardAudioBeepPlayer.playConfirm();
+						}
 					}
 					else {
 						this.addFloatingText("영력 부족", "#ff6060", feedbackX, feedbackY);
 						// 영력 부족이면 선택은 그대로 유지 (외부 클릭 시 취소).
+						if (cardAudioBeepPlayer) {
+							cardAudioBeepPlayer.playError();
+						}
 					}
 				}
 				else {
 					// 다른 카드 (또는 첫 선택) → 그 카드를 새로 선택.
 					this.#selectedCardId = pickedCard.id;
+					if (cardAudioBeepPlayer) {
+						cardAudioBeepPlayer.playClick();
+					}
 				}
 				return;
 			}
@@ -2167,5 +2203,25 @@ export class BattlePart extends Object {
 			lines.push(currentLine);
 		}
 		return lines;
+	}
+
+	//==============================================================================
+	// 오디오 비프 플레이어 설정. 주입되지 않으면 비프음 없이 동작.
+	//==============================================================================
+	/**
+	 * @param { AudioBeepPlayer } audioBeepPlayer
+	 */
+	setAudioBeepPlayer(audioBeepPlayer) {
+		this.#audioBeepPlayer = audioBeepPlayer;
+	}
+
+	//==============================================================================
+	// 오디오 비프 플레이어 반환.
+	//==============================================================================
+	/**
+	 * @returns { AudioBeepPlayer | null }
+	 */
+	getAudioBeepPlayer() {
+		return this.#audioBeepPlayer;
 	}
 }

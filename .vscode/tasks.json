@@ -4,7 +4,7 @@
 		{
 			"label": "​Packaging Web: 수선전",
 			"type": "shell",
-			"command": "node build.cjs web bundle talesofcultivation",
+			"command": "node tools/build.cjs web bundle talesofcultivation",
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -14,7 +14,7 @@
 		{
 			"label": "​​Packaging Web Deploy: 수선전",
 			"type": "shell",
-			"command": "node build.cjs web bundle talesofcultivation && node build.cjs web deploy",
+			"command": "node tools/build.cjs web bundle talesofcultivation && node tools/build.cjs web deploy",
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -24,7 +24,7 @@
 		{
 			"label": "​​​Check Assets",
 			"type": "shell",
-			"command": "node build.cjs web check",
+			"command": "node tools/build.cjs web check",
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -34,7 +34,7 @@
 		{
 			"label": "​​​​Tables: xlsx → json",
 			"type": "shell",
-			"command": "node build.cjs data tables",
+			"command": "node tools/build.cjs data tables",
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -44,7 +44,7 @@
 		{
 			"label": "​​​​​Tables: xlsx → 데이터 클래스 (.js)",
 			"type": "shell",
-			"command": "node build.cjs data classes",
+			"command": "node tools/build.cjs data classes",
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -54,7 +54,7 @@
 		{
 			"label": "​​​​​​Tables: 전체 (json + 클래스)",
 			"type": "shell",
-			"command": "node build.cjs data all",
+			"command": "node tools/build.cjs data all",
 			"group": {
 				"kind": "build",
 				"isDefault": true

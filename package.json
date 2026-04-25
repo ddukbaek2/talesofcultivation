@@ -6,10 +6,10 @@
 	"main": "src/main.js",
 	"type": "module",
 	"scripts": {
-		"build": "node build.cjs web bundle talesofcultivation",
-		"deploy": "node build.cjs web deploy",
-		"bundle-deploy": "node build.cjs web bundle talesofcultivation && node build.cjs web deploy",
-		"tables": "node build.cjs data tables",
+		"build": "node tools/build.cjs web bundle talesofcultivation",
+		"deploy": "node tools/build.cjs web deploy",
+		"bundle-deploy": "node tools/build.cjs web bundle talesofcultivation && node tools/build.cjs web deploy",
+		"tables": "node tools/build.cjs data tables",
 		"tables-export": "node tools/json-to-xlsx.cjs"
 	},
 	"devDependencies": {
