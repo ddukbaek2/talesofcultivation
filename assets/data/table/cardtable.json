@@ -1,8 +1,8 @@
 [
 	{
 		"id": 11000001,
-		"displayName": "어설픈 휘두름",
-		"description": "어설피 검을 휘둘러 6의 피해를 입힌다",
+		"displayName": "휘두르기",
+		"description": "검을 가로로 휘둘러 6의 피해를 입힌다",
 		"color": "#aa3333",
 		"isSpecial": false,
 		"grade": 1,
@@ -19,8 +19,8 @@
 	},
 	{
 		"id": 11000002,
-		"displayName": "엉성한 막기",
-		"description": "엉거주춤 받아내 5의 피해를 방어한다",
+		"displayName": "막기",
+		"description": "검을 곧추세워 5의 피해를 방어한다",
 		"color": "#3366aa",
 		"isSpecial": false,
 		"grade": 1,
@@ -36,9 +36,45 @@
 		]
 	},
 	{
-		"id": 11000003,
-		"displayName": "짧은 베기",
-		"description": "검을 짧게 내어 5의 피해를 입힌다",
+		"id": 11000004,
+		"displayName": "숨 고르기",
+		"description": "호흡을 가다듬어 행동력을 1 회복한다",
+		"color": "#bbaa55",
+		"isSpecial": false,
+		"grade": 1,
+		"cost": 0,
+		"sect": 10000001,
+		"element": "wind",
+		"cardType": "buff",
+		"effects": [
+			{
+				"type": "actionPoint",
+				"value": 1
+			}
+		]
+	},
+	{
+		"id": 11000005,
+		"displayName": "구르기",
+		"description": "몸을 굴려 다음 공격 1회를 무효화한다",
+		"color": "#aaccdd",
+		"isSpecial": false,
+		"grade": 1,
+		"cost": 1,
+		"sect": 10000001,
+		"element": "wind",
+		"cardType": "buff",
+		"effects": [
+			{
+				"type": "dodge",
+				"value": 1
+			}
+		]
+	},
+	{
+		"id": 11000007,
+		"displayName": "베기",
+		"description": "검을 옆으로 휘둘러 5의 피해를 입힌다",
 		"color": "#aa4444",
 		"isSpecial": false,
 		"grade": 1,
@@ -54,10 +90,46 @@
 		]
 	},
 	{
-		"id": 11000004,
-		"displayName": "막아세우기",
-		"description": "검자루로 받아 4의 피해를 방어한다",
-		"color": "#3377aa",
+		"id": 11000008,
+		"displayName": "내리치기",
+		"description": "검을 위에서 아래로 내리쳐 7의 피해를 입힌다",
+		"color": "#993333",
+		"isSpecial": false,
+		"grade": 1,
+		"cost": 1,
+		"sect": 10000001,
+		"element": "metal",
+		"cardType": "attack",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 7
+			}
+		]
+	},
+	{
+		"id": 11000009,
+		"displayName": "찌르기",
+		"description": "검을 곧게 찔러넣어 6의 피해를 입힌다",
+		"color": "#aa5555",
+		"isSpecial": false,
+		"grade": 1,
+		"cost": 1,
+		"sect": 10000001,
+		"element": "metal",
+		"cardType": "attack",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 6
+			}
+		]
+	},
+	{
+		"id": 11000010,
+		"displayName": "받아치기",
+		"description": "검신으로 받아쳐 3의 피해를 방어한다",
+		"color": "#3a6a99",
 		"isSpecial": false,
 		"grade": 1,
 		"cost": 1,
@@ -67,47 +139,43 @@
 		"effects": [
 			{
 				"type": "block",
-				"value": 4
+				"value": 3
 			}
 		]
 	},
 	{
-		"id": 11000005,
-		"displayName": "숨 고르기",
-		"description": "한숨 가다듬어 3의 피해를 방어한다",
-		"color": "#447799",
+		"id": 11000011,
+		"displayName": "집중",
+		"description": "호흡을 가다듬어 다음 검술 카드의 공격을 2 만큼 강화한다",
+		"color": "#bbaa55",
 		"isSpecial": false,
 		"grade": 1,
 		"cost": 1,
 		"sect": 10000001,
 		"element": "wind",
-		"cardType": "defense",
+		"cardType": "buff",
 		"effects": [
 			{
-				"type": "block",
-				"value": 3
+				"type": "focus",
+				"value": 2
 			}
 		]
 	},
 	{
-		"id": 11000006,
-		"displayName": "가르며 막기",
-		"description": "한 번 가르고 한 번 받아내 4의 피해를 입히고 3의 피해를 방어한다",
-		"color": "#888899",
+		"id": 11000012,
+		"displayName": "단검 던지기",
+		"description": "허리춤의 단검을 던져 2의 피해를 입힌다",
+		"color": "#cc7755",
 		"isSpecial": false,
 		"grade": 1,
-		"cost": 1,
+		"cost": 0,
 		"sect": 10000001,
 		"element": "metal",
-		"cardType": "mixed",
+		"cardType": "attack",
 		"effects": [
 			{
 				"type": "damage",
-				"value": 4
-			},
-			{
-				"type": "block",
-				"value": 3
+				"value": 2
 			}
 		]
 	},
@@ -207,27 +275,116 @@
 	},
 	{
 		"id": 12000010,
-		"displayName": "청풍검광 (淸風劍光)",
-		"description": "맑은 바람의 검광이 8의 피해를 입힌다",
-		"color": "#5577aa",
+		"displayName": "고수의 풍모",
+		"description": "고수의 기세로 상대에게 취약과 약화를 1씩 부여한다",
+		"color": "#7766aa",
 		"isSpecial": true,
 		"grade": 2,
-		"cost": 2,
+		"cost": 1,
 		"sect": 10000001,
 		"element": "wind",
-		"cardType": "attack",
+		"cardType": "buff",
 		"effects": [
 			{
-				"type": "damage",
-				"value": 8
+				"type": "vulnerable",
+				"value": 1
+			},
+			{
+				"type": "weaken",
+				"value": 1
 			}
 		]
 	},
 	{
 		"id": 12000011,
-		"displayName": "호검막 (護劍幕)",
-		"description": "검막을 펼쳐 8의 피해를 방어한다",
+		"displayName": "공격",
+		"description": "검을 휘둘러 6의 피해를 입힌다",
+		"color": "#aa4444",
+		"isSpecial": true,
+		"grade": 2,
+		"cost": 1,
+		"sect": 10000001,
+		"element": "metal",
+		"cardType": "attack",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 6
+			}
+		]
+	},
+	{
+		"id": 12000012,
+		"displayName": "방어",
+		"description": "검을 곧추세워 6의 피해를 방어한다",
 		"color": "#3366aa",
+		"isSpecial": true,
+		"grade": 2,
+		"cost": 1,
+		"sect": 10000001,
+		"element": "earth",
+		"cardType": "defense",
+		"effects": [
+			{
+				"type": "block",
+				"value": 6
+			}
+		]
+	},
+	{
+		"id": 12000013,
+		"displayName": "호흡 다스리기",
+		"description": "이번 턴 동안 사용하는 모든 공격 카드 피해가 2 증가한다",
+		"color": "#d4b46a",
+		"isSpecial": true,
+		"grade": 2,
+		"cost": 2,
+		"sect": 10000001,
+		"element": "wind",
+		"cardType": "buff",
+		"effects": [
+			{
+				"type": "empower",
+				"value": 2
+			}
+		]
+	},
+	{
+		"id": 12000014,
+		"displayName": "유유자적",
+		"description": "여유롭게 자세를 가다듬을 뿐 아무 효과가 없다",
+		"color": "#888899",
+		"isSpecial": true,
+		"grade": 2,
+		"cost": 1,
+		"sect": 10000001,
+		"element": "wind",
+		"cardType": "buff",
+		"effects": []
+	},
+	{
+		"id": 12000015,
+		"displayName": "강타",
+		"description": "검을 강하게 내질러 9의 피해를 입힌다",
+		"color": "#cc5533",
+		"isSpecial": true,
+		"grade": 2,
+		"cost": 2,
+		"sect": 10000001,
+		"element": "metal",
+		"cardType": "attack",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 9
+			}
+		]
+	},
+	{
+		"id": 12000016,
+		"displayName": "철벽",
+		"description": "검막을 두텁게 펼쳐 9의 피해를 방어한다",
+		"color": "#446699",
 		"isSpecial": true,
 		"grade": 2,
 		"cost": 2,
@@ -237,54 +394,32 @@
 		"effects": [
 			{
 				"type": "block",
-				"value": 8
+				"value": 9
 			}
 		]
 	},
 	{
-		"id": 12000012,
-		"displayName": "검령일섬 (劍靈一閃)",
-		"description": "검령이 한 번에 빛나며 5의 피해를 입히고 5의 피해를 방어한다",
-		"color": "#7788bb",
+		"id": 12000017,
+		"displayName": "위압",
+		"description": "위압의 일별로 상대에게 취약 2를 부여한다",
+		"color": "#996644",
 		"isSpecial": true,
 		"grade": 2,
-		"cost": 2,
+		"cost": 1,
 		"sect": 10000001,
-		"element": "metal",
-		"cardType": "mixed",
+		"element": "wind",
+		"cardType": "buff",
 		"effects": [
 			{
-				"type": "damage",
-				"value": 5
-			},
-			{
-				"type": "block",
-				"value": 5
-			}
-		]
-	},
-	{
-		"id": 12000013,
-		"displayName": "비검술 (飛劍術)",
-		"description": "검을 날려 7의 피해를 입힌다",
-		"color": "#6677aa",
-		"isSpecial": true,
-		"grade": 2,
-		"cost": 2,
-		"sect": 10000001,
-		"element": "metal",
-		"cardType": "attack",
-		"effects": [
-			{
-				"type": "damage",
-				"value": 7
+				"type": "vulnerable",
+				"value": 2
 			}
 		]
 	},
 	{
 		"id": 13000010,
-		"displayName": "만검결진 (萬劍結陣)",
-		"description": "천만 검의 진을 펼쳐 9의 피해를 입힌다",
+		"displayName": "만검결진",
+		"description": "검의 진을 펼쳐 9의 피해를 입힌다",
 		"color": "#5544aa",
 		"isSpecial": true,
 		"grade": 3,
@@ -301,7 +436,7 @@
 	},
 	{
 		"id": 13000011,
-		"displayName": "천검묘리 (天劍妙理)",
+		"displayName": "천검묘리",
 		"description": "검의 묘리를 깨우쳐 6의 피해를 입히고 6의 피해를 방어한다",
 		"color": "#5566bb",
 		"isSpecial": true,

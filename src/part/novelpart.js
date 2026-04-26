@@ -17,6 +17,10 @@ const NAME_BOX_PADDING_X = 24;
 const NAME_BOX_MIN_WIDTH = 80;
 const NAME_BOX_FONT = "bold 18px GyeonggiBatangBold, sans-serif";
 const TYPING_CHARS_PER_SECOND = 28;
+const FAST_FORWARD_SPEED_MULTIPLIER = 8;
+const CONTINUE_ICON_BOB_AMPLITUDE = 3;
+const CONTINUE_ICON_BOB_FREQUENCY = 1.6;
+const CONTINUE_ICON_GAP = 10;
 
 
 //==============================================================================
@@ -39,6 +43,7 @@ export class NovelPart extends Object {
 	/** @private @type { boolean } */ #isFinished;
 	/** @private @type { boolean } */ #wasTouchPressed;
 	/** @private @type { boolean } */ #hasReceivedFirstInput;
+	/** @private @type { number } */ #elapsedTime;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
 
 	//==============================================================================
@@ -54,6 +59,7 @@ export class NovelPart extends Object {
 		this.#isFinished = false;
 		this.#wasTouchPressed = false;
 		this.#hasReceivedFirstInput = false;
+		this.#elapsedTime = 0;
 		this.#audioBeepPlayer = null;
 	}
 
@@ -121,6 +127,7 @@ export class NovelPart extends Object {
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	tick(timeDelta, inputManager, popupRect) {
+		this.#elapsedTime += timeDelta;
 		if (this.#isFinished) {
 			return;
 		}
@@ -148,19 +155,23 @@ export class NovelPart extends Object {
 			return;
 		}
 
+		// Control 키를 누르고 있으면 고속 재생 (타이핑 가속 + 자동 진행, 비프 묵음).
+		const isFastForward = inputManager.isKeyPressed("ControlLeft") || inputManager.isKeyPressed("ControlRight");
+		const typingCharsPerSecond = isFastForward ? TYPING_CHARS_PER_SECOND * FAST_FORWARD_SPEED_MULTIPLIER : TYPING_CHARS_PER_SECOND;
+
 		// 타이핑 진행.
 		const currentDialogue = this.#dialogues[this.#currentIndex];
 		const previousRevealedCharIndex = System.Math.floor(this.#revealedChars);
 		if (this.#revealedChars < currentDialogue.text.length) {
-			this.#revealedChars += TYPING_CHARS_PER_SECOND * timeDelta;
+			this.#revealedChars += typingCharsPerSecond * timeDelta;
 			if (this.#revealedChars > currentDialogue.text.length) {
 				this.#revealedChars = currentDialogue.text.length;
 			}
 		}
 
-		// 새로 드러난 글자마다 타이핑 비프 재생 (공백/구두점 제외).
+		// 새로 드러난 글자마다 타이핑 비프 재생 (공백/구두점 제외, 고속 재생 중에는 묵음).
 		const nextRevealedCharIndex = System.Math.floor(this.#revealedChars);
-		if (nextRevealedCharIndex > previousRevealedCharIndex) {
+		if (!isFastForward && nextRevealedCharIndex > previousRevealedCharIndex) {
 			const typingAudioBeepPlayer = this.getAudioBeepPlayer();
 			if (typingAudioBeepPlayer) {
 				for (let charIndex = previousRevealedCharIndex; charIndex < nextRevealedCharIndex; ++charIndex) {
@@ -172,10 +183,24 @@ export class NovelPart extends Object {
 			}
 		}
 
+		const fullyRevealed = this.#revealedChars >= currentDialogue.text.length;
+
+		// Control 고속 재생 중 완성된 대사는 클릭 없이 자동 진행 (효과음 없음).
+		if (isFastForward && fullyRevealed) {
+			if (this.#currentIndex + 1 < this.#dialogues.length) {
+				++this.#currentIndex;
+				this.#revealedChars = 0;
+			}
+			else {
+				this.#isFinished = true;
+			}
+			this.#wasTouchPressed = inputManager.isTouchPressed();
+			return;
+		}
+
 		// 입력 처리 (just-pressed 트리거).
 		const isPressed = inputManager.isTouchPressed();
 		if (isPressed && !this.#wasTouchPressed) {
-			const fullyRevealed = this.#revealedChars >= currentDialogue.text.length;
 			const clickAudioBeepPlayer = this.getAudioBeepPlayer();
 			if (!fullyRevealed) {
 				// 타이핑 중이면 즉시 완성.
@@ -281,14 +306,20 @@ export class NovelPart extends Object {
 		}
 		else {
 			const fullyRevealed = this.#revealedChars >= currentDialogue.text.length;
-			if (fullyRevealed) {
-				canvasRenderingContext.fillStyle = "#aaaaaa";
-				canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
-				canvasRenderingContext.textAlign = "right";
-				canvasRenderingContext.textBaseline = "bottom";
-				const isLast = this.#currentIndex + 1 >= this.#dialogues.length;
-				const guide = isLast ? "▼ 클릭하여 시작" : "▼ 클릭하여 계속";
-				canvasRenderingContext.fillText(guide, textBoxX + textBoxWidth - 16, textBoxY + TEXTBOX_HEIGHT - 12);
+			if (fullyRevealed && lines.length > 0) {
+				// 대사 본문과 동일한 폰트로 마지막 줄 폭을 측정하여 글자 바로 뒤에 ▼ 아이콘을 위치시킨다.
+				canvasRenderingContext.font = "20px GyeonggiBatang, sans-serif";
+				canvasRenderingContext.textAlign = "left";
+				canvasRenderingContext.textBaseline = "top";
+				const lastLineIndex = lines.length - 1;
+				const lastLineText = lines[lastLineIndex];
+				const lastLineMetrics = canvasRenderingContext.measureText(lastLineText);
+				const lastLineWidth = lastLineMetrics.width;
+				const continueIconX = textBoxX + textPaddingX + lastLineWidth + CONTINUE_ICON_GAP;
+				const continueIconBaseY = textBoxY + textPaddingY + lastLineIndex * lineHeight;
+				const continueIconBobOffset = System.Math.sin(this.#elapsedTime * CONTINUE_ICON_BOB_FREQUENCY * System.Math.PI * 2) * CONTINUE_ICON_BOB_AMPLITUDE;
+				canvasRenderingContext.fillStyle = "#d4b46a";
+				canvasRenderingContext.fillText("▼", continueIconX, continueIconBaseY + continueIconBobOffset);
 			}
 		}
 

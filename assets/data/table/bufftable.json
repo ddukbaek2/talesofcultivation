@@ -53,5 +53,38 @@
 		"isTurnTemporary": false,
 		"decayPerTurn": true,
 		"isDebuff": true
+	},
+	{
+		"id": 10000006,
+		"key": "focus",
+		"displayName": "집중",
+		"color": "#bbaa55",
+		"icon": "집",
+		"description": "다음 검술 카드의 공격이 {N} 늘어난다",
+		"isTurnTemporary": false,
+		"decayPerTurn": false,
+		"isDebuff": false
+	},
+	{
+		"id": 10000007,
+		"key": "dodge",
+		"displayName": "회피",
+		"color": "#aaccdd",
+		"icon": "회",
+		"description": "다음 공격 {N}회를 무효화한다",
+		"isTurnTemporary": true,
+		"decayPerTurn": false,
+		"isDebuff": false
+	},
+	{
+		"id": 10000008,
+		"key": "empower",
+		"displayName": "내공",
+		"color": "#d4b46a",
+		"icon": "내",
+		"description": "이번 턴 동안 공격 카드 피해가 {N} 증가한다",
+		"isTurnTemporary": true,
+		"decayPerTurn": false,
+		"isDebuff": false
 	}
 ]

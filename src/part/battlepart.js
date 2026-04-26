@@ -14,22 +14,42 @@ const STARTING_HAND_SIZE = 4;
 const MAX_HAND_SIZE = 10;
 const STARTING_HEALTH = 30;
 const MAX_ENERGY = 5;
+const STARTING_ACTION_POINT_CAP = 3;
+const STARTING_ACTION_POINTS = 1;
+const ACTION_POINT_GAIN_PER_TURN = 1;
 const OPPONENT_TURN_DELAY = 1.0;
-const OPPONENT_BETWEEN_CARDS_DELAY = 0.6;
 const ENTER_DURATION = 0.35;
-const EXIT_DURATION = 0.55;
 const LOG_MAX_ENTRIES = 8;
 
+// 카드 사용 3단계 애니메이션:
+//   1) cast: 손에서 무대 중앙으로 (확대).
+//   2) hold: 중앙에 머물며 발동 (펄스). 이 동안 캐릭터 인터랙션 표출.
+//   3) discard: 중앙에서 무덤으로 (축소+페이드).
+const CARD_CAST_DURATION = 0.25;
+const CARD_HOLD_DURATION = 1.0;
+const CARD_DISCARD_DURATION = 0.4;
+const CARD_LIFE_DURATION = CARD_CAST_DURATION + CARD_HOLD_DURATION + CARD_DISCARD_DURATION;
+const CARD_CAST_SCALE = 1.2;
+const CARD_DISCARD_END_SCALE = 0.8;
+
+// 발동 단계가 끝난 뒤(0.1초 여유) 다음 적 카드 진행. 카드들이 중앙에 겹쳐 보이지 않도록.
+const OPPONENT_BETWEEN_CARDS_DELAY = CARD_LIFE_DURATION + 0.1;
+
+// 무대 캐릭터 인터랙션.
+const STAGE_ACTOR_PULSE_AMOUNT = 0.08;
+const STAGE_TARGET_SHAKE_AMOUNT = 6;
+const STAGE_TARGET_FLASH_PEAK = 0.5;
+
 const SIDE_MARGIN = 16;
-const PLAYER_CARD_WIDTH = 84;
-const PLAYER_CARD_HEIGHT = 124;
+const PLAYER_CARD_WIDTH = 126;
+const PLAYER_CARD_HEIGHT = 186;
 const OPPONENT_CARD_WIDTH = 70;
 const OPPONENT_CARD_HEIGHT = 96;
 const OPPONENT_CARD_GAP = 8;
 const SLOT_WIDTH = PLAYER_CARD_WIDTH;
 const SLOT_HEIGHT = PLAYER_CARD_HEIGHT;
 const PORTRAIT_WIDTH = 240;
-const PORTRAIT_HEIGHT = 168;
+const PORTRAIT_HEIGHT = 194;
 const END_TURN_BUTTON_WIDTH = SLOT_WIDTH;
 const END_TURN_BUTTON_HEIGHT = 40;
 const HAND_BOTTOM_MARGIN = 20;
@@ -108,8 +128,15 @@ class PlayerState extends Object {
 	/** @type { string } */ nickname;
 	/** @type { string } */ stageName;
 	/** @type { number } */ health;
+	/** @type { number } */ maxHealth;
 	/** @type { number } */ maxEnergy;
 	/** @type { number } */ currentEnergy;
+	/** @type { number } */ energyCap;
+	/** @type { number } */ energyGainPerTurn;
+	/** @type { number } */ actionPoints;
+	/** @type { number } */ maxActionPoints;
+	/** @type { number } */ actionPointCap;
+	/** @type { number } */ actionPointGainPerTurn;
 	/** @type { Card[] } */ deck;
 	/** @type { Card[] } */ hand;
 	/** @type { Card[] } */ discard;
@@ -124,8 +151,15 @@ class PlayerState extends Object {
 		this.nickname = "";
 		this.stageName = "";
 		this.health = STARTING_HEALTH;
+		this.maxHealth = STARTING_HEALTH;
 		this.maxEnergy = 0;
 		this.currentEnergy = 0;
+		this.energyCap = MAX_ENERGY;
+		this.energyGainPerTurn = 1;
+		this.actionPoints = 0;
+		this.maxActionPoints = 0;
+		this.actionPointCap = STARTING_ACTION_POINT_CAP;
+		this.actionPointGainPerTurn = 1;
 		this.deck = [];
 		this.hand = [];
 		this.discard = [];
@@ -154,10 +188,15 @@ export class BattlePart extends Object {
 	/** @private @type { string } */ #currentSide;
 	/** @private @type { Array<{ card: Card, centerX: number, centerY: number, rotation: number, scale: number }> } */ #playerHandLayouts;
 	/** @private @type { Array<{ x: number, y: number, width: number, height: number }> } */ #opponentCardLayouts;
-	/** @private @type { Array<{ card: Card, layout: { x: number, y: number, width: number, height: number }, exitTime: number, isReveal: boolean }> } */ #playerExitingCards;
-	/** @private @type { Array<{ card: Card, layout: { x: number, y: number, width: number, height: number }, exitTime: number, isReveal: boolean }> } */ #opponentExitingCards;
+	/** @private @type { Array<{ card: Card, layout: { x: number, y: number, width: number, height: number }, elapsed: number, actorSide: string, targetSide: string, isReveal: boolean }> } */ #playerExitingCards;
+	/** @private @type { Array<{ card: Card, layout: { x: number, y: number, width: number, height: number }, elapsed: number, actorSide: string, targetSide: string, isReveal: boolean }> } */ #opponentExitingCards;
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #endTurnButtonRect;
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #abandonButtonRect;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #deckViewCloseRect;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #deckViewPanelRect;
+	/** @private @type { boolean } */ #isDeckViewOpen;
+	/** @private @type { string } */ #viewedPileTitle;
+	/** @private @type { Card[] } */ #viewedPileCards;
 	/** @private @type { number | null } */ #selectedCardId;
 	/** @private @type { string } */ #endGameMessage;
 	/** @private @type { number } */ #nextCardId;
@@ -197,6 +236,11 @@ export class BattlePart extends Object {
 		this.#opponentExitingCards = [];
 		this.#endTurnButtonRect = null;
 		this.#abandonButtonRect = null;
+		this.#deckViewCloseRect = null;
+		this.#deckViewPanelRect = null;
+		this.#isDeckViewOpen = false;
+		this.#viewedPileTitle = "";
+		this.#viewedPileCards = [];
 		this.#selectedCardId = null;
 		this.#endGameMessage = "";
 		this.#nextCardId = 1;
@@ -366,6 +410,11 @@ export class BattlePart extends Object {
 		this.#opponentExitingCards = [];
 		this.#endTurnButtonRect = null;
 		this.#abandonButtonRect = null;
+		this.#deckViewCloseRect = null;
+		this.#deckViewPanelRect = null;
+		this.#isDeckViewOpen = false;
+		this.#viewedPileTitle = "";
+		this.#viewedPileCards = [];
 		this.#selectedCardId = null;
 		this.#endGameMessage = "";
 		this.#nextCardId = 1;
@@ -388,18 +437,6 @@ export class BattlePart extends Object {
 			this.drawCardFromDeck(this.#player);
 			this.drawCardFromDeck(this.#opponent);
 		}
-		this.#player.maxEnergy = 1;
-		this.#player.currentEnergy = 1;
-
-		// 시연용 버프/디버프.
-		this.addBuff(this.#player, "block", 3);
-		this.addBuff(this.#player, "strength", 2);
-		this.addBuff(this.#player, "dexterity", 1);
-		this.addBuff(this.#player, "weaken", 2);
-		this.addBuff(this.#player, "vulnerable", 1);
-		this.addBuff(this.#opponent, "block", 4);
-		this.addBuff(this.#opponent, "strength", 1);
-		this.addBuff(this.#opponent, "vulnerable", 2);
 	}
 
 	//==============================================================================
@@ -428,6 +465,36 @@ export class BattlePart extends Object {
 	 */
 	applyCharacterToPlayer(playerState, characterId, fallbackNickname) {
 		const definition = this.findCharacterDefinition(characterId);
+		// 캐릭터별 체력 / 영력 / 행동력 파라미터 적용. 정의에 없으면 기본값.
+		const characterMaxHealth = definition && typeof definition.maxHealth === "number" ? definition.maxHealth : STARTING_HEALTH;
+		const characterEnergyCap = definition && typeof definition.energyCap === "number" ? definition.energyCap : MAX_ENERGY;
+		const characterStartingEnergy = definition && typeof definition.startingEnergy === "number" ? definition.startingEnergy : 1;
+		const characterEnergyGainPerTurn = definition && typeof definition.energyGainPerTurn === "number" ? definition.energyGainPerTurn : 1;
+		const characterActionPointCap = definition && typeof definition.actionPointCap === "number" ? definition.actionPointCap : STARTING_ACTION_POINT_CAP;
+		const characterStartingActionPoints = definition && typeof definition.startingActionPoints === "number" ? definition.startingActionPoints : STARTING_ACTION_POINTS;
+		const characterActionPointGainPerTurn = definition && typeof definition.actionPointGainPerTurn === "number" ? definition.actionPointGainPerTurn : ACTION_POINT_GAIN_PER_TURN;
+		playerState.maxHealth = characterMaxHealth;
+		playerState.health = characterMaxHealth;
+		playerState.energyCap = characterEnergyCap;
+		playerState.energyGainPerTurn = characterEnergyGainPerTurn;
+		playerState.actionPointCap = characterActionPointCap;
+		playerState.actionPointGainPerTurn = characterActionPointGainPerTurn;
+		// 플레이어는 첫 턴 startTurn 호출 없이 바로 행동 → 시작값을 그대로 세팅.
+		// 상대는 첫 턴이 startTurn 으로 시작 → startTurn 의 +gainPerTurn 을 거꾸로 빼두어 시작값에 도달하게 한다.
+		if (playerState.side === PlayerSide.player) {
+			playerState.maxEnergy = characterStartingEnergy;
+			playerState.currentEnergy = characterStartingEnergy;
+			playerState.maxActionPoints = characterStartingActionPoints;
+			playerState.actionPoints = characterStartingActionPoints;
+		}
+		else {
+			const opponentInitialMaxEnergy = System.Math.max(0, characterStartingEnergy - characterEnergyGainPerTurn);
+			playerState.maxEnergy = opponentInitialMaxEnergy;
+			playerState.currentEnergy = 0;
+			const opponentInitialMaxActionPoints = System.Math.max(0, characterStartingActionPoints - characterActionPointGainPerTurn);
+			playerState.maxActionPoints = opponentInitialMaxActionPoints;
+			playerState.actionPoints = 0;
+		}
 		if (definition) {
 			playerState.nickname = definition.name || fallbackNickname;
 			// 경지: realm 정의에서 이름 룩업. 없으면 빈 문자열.
@@ -569,26 +636,36 @@ export class BattlePart extends Object {
 			return false;
 		}
 		const cost = typeof definition.cost === "number" ? definition.cost : 0;
-		if (actor.currentEnergy < cost) {
+		if (actor.actionPoints < cost) {
 			if (actor.side === PlayerSide.player) {
-				this.appendLog(`영력 부족 (${definition.displayName})`);
+				this.appendLog(`행동력 부족 (${definition.displayName})`);
 			}
 			return false;
 		}
 
-		actor.currentEnergy -= cost;
+		actor.actionPoints -= cost;
 
 		const strengthBuff = actor.buffs.find((b) => b.id === "strength");
 		const dexterityBuff = actor.buffs.find((b) => b.id === "dexterity");
 		const weakenBuff = actor.buffs.find((b) => b.id === "weaken");
+		const focusBuff = actor.buffs.find((b) => b.id === "focus");
+		const empowerBuff = actor.buffs.find((b) => b.id === "empower");
 		const strengthBonus = strengthBuff ? strengthBuff.value : 0;
 		const dexterityBonus = dexterityBuff ? dexterityBuff.value : 0;
 		const weakenAmount = weakenBuff ? weakenBuff.value : 0;
+		const focusBonus = focusBuff ? focusBuff.value : 0;
+		const empowerBonus = empowerBuff ? empowerBuff.value : 0;
+
+		// 검술 (attack 타입) 카드면 focus / 내공(empower) 보너스를 데미지에 더한다.
+		const isAttackCard = definition.cardType === "attack";
 
 		for (const effect of definition.effects) {
 			switch (effect.type) {
 				case "damage": {
 					let damageValue = effect.value + strengthBonus;
+					if (isAttackCard) {
+						damageValue += focusBonus + empowerBonus;
+					}
 					if (weakenAmount > 0) {
 						damageValue = System.Math.floor(damageValue * 0.75);
 					}
@@ -604,18 +681,38 @@ export class BattlePart extends Object {
 					break;
 				}
 				case "heal": {
-					const healed = System.Math.min(STARTING_HEALTH, actor.health + effect.value);
+					const healed = System.Math.min(actor.maxHealth, actor.health + effect.value);
 					actor.health = healed;
+					break;
+				}
+				case "actionPoint": {
+					const restoredActionPoints = System.Math.min(actor.actionPointCap, actor.actionPoints + effect.value);
+					actor.actionPoints = restoredActionPoints;
+					if (actor.maxActionPoints < restoredActionPoints) {
+						actor.maxActionPoints = restoredActionPoints;
+					}
+					break;
+				}
+				case "weaken":
+				case "vulnerable": {
+					// 디버프는 상대(target) 에게 부여한다.
+					this.addBuff(target, effect.type, effect.value);
 					break;
 				}
 				case "strength":
 				case "dexterity":
-				case "weaken":
-				case "vulnerable": {
+				case "focus":
+				case "dodge":
+				case "empower": {
 					this.addBuff(actor, effect.type, effect.value);
 					break;
 				}
 			}
+		}
+
+		// focus 는 검술 카드 1회 사용 후 소비.
+		if (isAttackCard && focusBuff) {
+			actor.buffs = actor.buffs.filter((b) => b.id !== "focus");
 		}
 
 		// 사용 애니메이션 등록.
@@ -639,10 +736,23 @@ export class BattlePart extends Object {
 				sourceLayout = this.#opponentCardLayouts[handIndex] || null;
 			}
 			if (sourceLayout) {
+				// 카드의 주 효과가 데미지면 상대 측, 아니면 자기 측을 인터랙션 대상으로 잡음.
+				let isDamageEffect = false;
+				for (const effect of definition.effects) {
+					if (effect.type === "damage") {
+						isDamageEffect = true;
+						break;
+					}
+				}
+				const targetSide = isDamageEffect
+					? (actor.side === PlayerSide.player ? PlayerSide.opponent : PlayerSide.player)
+					: actor.side;
 				const exitingEntry = {
 					card: card,
 					layout: { x: sourceLayout.x, y: sourceLayout.y, width: sourceLayout.width, height: sourceLayout.height },
-					exitTime: EXIT_DURATION,
+					elapsed: 0,
+					actorSide: actor.side,
+					targetSide: targetSide,
 					isReveal: definition.isSpecial,
 				};
 				if (actor.side === PlayerSide.player) {
@@ -672,6 +782,15 @@ export class BattlePart extends Object {
 	 * @param { number } amount
 	 */
 	applyDamage(target, amount) {
+		// 회피: 공격 1회를 통째로 무효화하고 회피 수치를 1 감소시킨다.
+		const dodgeBuff = target.buffs.find((b) => b.id === "dodge");
+		if (dodgeBuff && dodgeBuff.value > 0) {
+			dodgeBuff.value -= 1;
+			if (dodgeBuff.value <= 0) {
+				target.buffs = target.buffs.filter((b) => b !== dodgeBuff);
+			}
+			return;
+		}
 		let actualDamage = amount;
 		const vulnerableBuff = target.buffs.find((b) => b.id === "vulnerable");
 		if (vulnerableBuff && vulnerableBuff.value > 0) {
@@ -757,8 +876,10 @@ export class BattlePart extends Object {
 			}
 		}
 		playerState.buffs = playerState.buffs.filter((b) => b.value > 0);
-		playerState.maxEnergy = System.Math.min(MAX_ENERGY, playerState.maxEnergy + 1);
+		playerState.maxEnergy = System.Math.min(playerState.energyCap, playerState.maxEnergy + playerState.energyGainPerTurn);
 		playerState.currentEnergy = playerState.maxEnergy;
+		playerState.maxActionPoints = System.Math.min(playerState.actionPointCap, playerState.maxActionPoints + playerState.actionPointGainPerTurn);
+		playerState.actionPoints = playerState.maxActionPoints;
 		this.drawCardFromDeck(playerState);
 	}
 
@@ -809,14 +930,14 @@ export class BattlePart extends Object {
 			}
 		}
 		for (let i = this.#playerExitingCards.length - 1; i >= 0; --i) {
-			this.#playerExitingCards[i].exitTime -= timeDelta;
-			if (this.#playerExitingCards[i].exitTime <= 0) {
+			this.#playerExitingCards[i].elapsed += timeDelta;
+			if (this.#playerExitingCards[i].elapsed >= CARD_LIFE_DURATION) {
 				this.#playerExitingCards.splice(i, 1);
 			}
 		}
 		for (let i = this.#opponentExitingCards.length - 1; i >= 0; --i) {
-			this.#opponentExitingCards[i].exitTime -= timeDelta;
-			if (this.#opponentExitingCards[i].exitTime <= 0) {
+			this.#opponentExitingCards[i].elapsed += timeDelta;
+			if (this.#opponentExitingCards[i].elapsed >= CARD_LIFE_DURATION) {
 				this.#opponentExitingCards.splice(i, 1);
 			}
 		}
@@ -886,6 +1007,25 @@ export class BattlePart extends Object {
 			return;
 		}
 
+		// 산패 보기 팝업이 열려 있으면 모달로 동작 (다른 입력 차단).
+		if (this.#isDeckViewOpen) {
+			if (inputManager.isTouchPressed()) {
+				const viewInputPosition = inputManager.getViewInputPosition();
+				const closeAudioBeepPlayer = this.getAudioBeepPlayer();
+				if (closeAudioBeepPlayer) {
+					closeAudioBeepPlayer.playClick();
+				}
+				// 닫기 버튼 또는 팝업 외부 클릭으로 닫음.
+				if (this.#deckViewCloseRect && this.isInsideRect(viewInputPosition, this.#deckViewCloseRect)) {
+					this.#isDeckViewOpen = false;
+				}
+				else if (this.#deckViewPanelRect && !this.isInsideRect(viewInputPosition, this.#deckViewPanelRect)) {
+					this.#isDeckViewOpen = false;
+				}
+			}
+			return;
+		}
+
 		if (this.#currentSide === PlayerSide.opponent) {
 			this.#opponentTurnTime -= timeDelta;
 			if (this.#opponentTurnTime <= 0) {
@@ -922,6 +1062,10 @@ export class BattlePart extends Object {
 				}
 				return;
 			}
+			// 4개 슬롯 (내/적 × 산패/묘패) 클릭 → 해당 더미 보기 팝업.
+			if (this.tryOpenPileViewBySlotHit(viewInputPosition)) {
+				return;
+			}
 
 			// 2) 손패 카드 hit.
 			const pickedHandIndex = this.findHandCardIndexAtPosition(viewInputPosition);
@@ -942,8 +1086,8 @@ export class BattlePart extends Object {
 						}
 					}
 					else {
-						this.addFloatingText("영력 부족", "#ff6060", feedbackX, feedbackY);
-						// 영력 부족이면 선택은 그대로 유지 (외부 클릭 시 취소).
+						this.addFloatingText("행동력 부족", "#ff6060", feedbackX, feedbackY);
+						// 행동력 부족이면 선택은 그대로 유지 (외부 클릭 시 취소).
 						if (cardAudioBeepPlayer) {
 							cardAudioBeepPlayer.playError();
 						}
@@ -984,10 +1128,10 @@ export class BattlePart extends Object {
 	}
 
 	//==============================================================================
-	// 상대 AI 턴: 영력 한도 내 시간차로 한 장씩 사용.
+	// 상대 AI 턴: 행동력 한도 내 시간차로 한 장씩 사용.
 	//==============================================================================
 	runOpponentTurn() {
-		if (this.#opponent.hand.length === 0 || this.#opponent.currentEnergy <= 0) {
+		if (this.#opponent.hand.length === 0 || this.#opponent.actionPoints <= 0) {
 			this.endTurn();
 			return;
 		}
@@ -1000,7 +1144,7 @@ export class BattlePart extends Object {
 		if (this.#endGameMessage !== "") {
 			return;
 		}
-		if (!success || this.#opponent.currentEnergy <= 0 || this.#opponent.hand.length === 0) {
+		if (!success || this.#opponent.actionPoints <= 0 || this.#opponent.hand.length === 0) {
 			this.endTurn();
 		}
 		else {
@@ -1026,7 +1170,7 @@ export class BattlePart extends Object {
 				continue;
 			}
 			const cost = typeof definition.cost === "number" ? definition.cost : 0;
-			if (cost > this.#opponent.currentEnergy) {
+			if (cost > this.#opponent.actionPoints) {
 				continue;
 			}
 			let cardScore = 0;
@@ -1038,7 +1182,7 @@ export class BattlePart extends Object {
 					cardScore += effect.value * 0.7;
 				}
 				else if (effect.type === "heal") {
-					const missingHealth = STARTING_HEALTH - this.#opponent.health;
+					const missingHealth = this.#opponent.maxHealth - this.#opponent.health;
 					cardScore += missingHealth >= effect.value ? effect.value : 0;
 				}
 			}
@@ -1135,7 +1279,7 @@ export class BattlePart extends Object {
 		this.drawPlayerHand(canvasRenderingContext, popupRect, playerHandLineY);
 
 		// 사용 애니메이션.
-		this.drawExitingCards(canvasRenderingContext);
+		this.drawExitingCards(canvasRenderingContext, popupRect);
 
 		// 누르고 있는 버프의 툴팁 (플레이어 버프 → 정보창 우측, 적 버프 → 정보창 좌측).
 		if (this.#pressedBuffInfo !== null) {
@@ -1155,6 +1299,15 @@ export class BattlePart extends Object {
 
 		// 플로팅 텍스트 (사용/취소/영력 부족 등 행동 피드백).
 		this.drawFloatingTexts(canvasRenderingContext);
+
+		// 산패 보기 팝업 (모달, 다른 모든 요소 위에 출력).
+		if (this.#isDeckViewOpen) {
+			this.drawDeckViewPopup(canvasRenderingContext, popupRect);
+		}
+		else {
+			this.#deckViewPanelRect = null;
+			this.#deckViewCloseRect = null;
+		}
 
 		// 종료 오버레이.
 		if (this.#endGameMessage !== "") {
@@ -1225,7 +1378,7 @@ export class BattlePart extends Object {
 		const barHeight = 20;
 		canvasRenderingContext.fillStyle = "#331111";
 		canvasRenderingContext.fillRect(textX, healthBarY, textWidth, barHeight);
-		const healthRatio = playerState.health / STARTING_HEALTH;
+		const healthRatio = playerState.maxHealth > 0 ? playerState.health / playerState.maxHealth : 0;
 		const clampedHealthRatio = System.Math.max(0, System.Math.min(1, healthRatio));
 		canvasRenderingContext.fillStyle = "#cc3344";
 		canvasRenderingContext.fillRect(textX, healthBarY, textWidth * clampedHealthRatio, barHeight);
@@ -1236,13 +1389,29 @@ export class BattlePart extends Object {
 		canvasRenderingContext.font = "bold 13px GyeonggiBatangBold";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(`${playerState.health}/${STARTING_HEALTH}`, textX + textWidth * 0.5, healthBarY + barHeight * 0.5);
+		canvasRenderingContext.fillText(`${playerState.health}/${playerState.maxHealth}`, textX + textWidth * 0.5, healthBarY + barHeight * 0.5);
+
+		// 행동력바 (체력바와 동일 모양, 노란색).
+		const actionBarY = healthBarY + barHeight + 6;
+		canvasRenderingContext.fillStyle = "#332a11";
+		canvasRenderingContext.fillRect(textX, actionBarY, textWidth, barHeight);
+		const actionRatio = playerState.maxActionPoints > 0 ? playerState.actionPoints / playerState.maxActionPoints : 0;
+		const clampedActionRatio = System.Math.max(0, System.Math.min(1, actionRatio));
+		canvasRenderingContext.fillStyle = "#e2b94a";
+		canvasRenderingContext.fillRect(textX, actionBarY, textWidth * clampedActionRatio, barHeight);
+		canvasRenderingContext.strokeStyle = "#ffffff";
+		canvasRenderingContext.lineWidth = 1;
+		canvasRenderingContext.strokeRect(textX, actionBarY, textWidth, barHeight);
+		canvasRenderingContext.fillStyle = "#ffffff";
+		canvasRenderingContext.font = "bold 13px GyeonggiBatangBold";
+		canvasRenderingContext.textAlign = "center";
+		canvasRenderingContext.textBaseline = "middle";
+		canvasRenderingContext.fillText(`행 ${playerState.actionPoints}/${playerState.maxActionPoints}`, textX + textWidth * 0.5, actionBarY + barHeight * 0.5);
 
 		// 영력바 (체력바와 동일 모양, 파란색).
-		const energyBarY = healthBarY + barHeight + 6;
+		const energyBarY = actionBarY + barHeight + 6;
 		canvasRenderingContext.fillStyle = "#112233";
 		canvasRenderingContext.fillRect(textX, energyBarY, textWidth, barHeight);
-		// maxEnergy 기준 비율 (1/1 이면 100%). maxEnergy 0 이면 빈 게이지.
 		const energyRatio = playerState.maxEnergy > 0 ? playerState.currentEnergy / playerState.maxEnergy : 0;
 		const clampedEnergyRatio = System.Math.max(0, System.Math.min(1, energyRatio));
 		canvasRenderingContext.fillStyle = "#3388ee";
@@ -1254,7 +1423,7 @@ export class BattlePart extends Object {
 		canvasRenderingContext.font = "bold 13px GyeonggiBatangBold";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(`${playerState.currentEnergy}/${playerState.maxEnergy}`, textX + textWidth * 0.5, energyBarY + barHeight * 0.5);
+		canvasRenderingContext.fillText(`영 ${playerState.currentEnergy}/${playerState.maxEnergy}`, textX + textWidth * 0.5, energyBarY + barHeight * 0.5);
 
 		// 버프 줄.
 		const buffsTopY = energyBarY + barHeight + 8;
@@ -1485,11 +1654,11 @@ export class BattlePart extends Object {
 			width: PLAYER_CARD_WIDTH,
 			height: PLAYER_CARD_HEIGHT,
 		};
-		// 영력 부족 여부 (현재 영력 < 카드 cost) → cost 원 빨간색으로 강조.
+		// 행동력 부족 여부 (현재 행동력 < 카드 cost) → cost 원 빨간색으로 강조.
 		// 선택 진행 중이면 카드 외곽선 자체를 노랑으로 (별도 테두리 추가 X).
 		const definition = this.findCardDefinition(card.cardId);
 		const cost = definition && typeof definition.cost === "number" ? definition.cost : 0;
-		const isAffordable = this.#player.currentEnergy >= cost;
+		const isAffordable = this.#player.actionPoints >= cost;
 		const isSelected = card.selectionProgress >= 0.5;
 		this.drawCard(canvasRenderingContext, card, localLayout, alpha, false, isAffordable, isSelected);
 		canvasRenderingContext.restore();
@@ -1592,51 +1761,169 @@ export class BattlePart extends Object {
 	}
 
 	//==============================================================================
-	// 사용 중인 카드 출력 (페이드 + 슬라이드).
+	// 사용 중인 카드 출력 (3단계: cast → hold → discard).
 	//==============================================================================
 	/**
 	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	drawExitingCards(canvasRenderingContext) {
-		// 플레이어: 손에서 무덤(좌측) 으로 이동.
+	drawExitingCards(canvasRenderingContext, popupRect) {
+		// 발동 위치 (무대 중앙).
+		const castCenter = this.computeCastCenter(popupRect);
+
+		// 플레이어 카드.
 		for (const exitingEntry of this.#playerExitingCards) {
-			const progress = 1 - exitingEntry.exitTime / EXIT_DURATION;
-			const eased = this.easeOutCubic(progress);
 			const sourceCenterX = exitingEntry.layout.x + exitingEntry.layout.width * 0.5;
 			const sourceCenterY = exitingEntry.layout.y + exitingEntry.layout.height * 0.5;
 			const targetCenterX = this.#playerDiscardSlotCenter ? this.#playerDiscardSlotCenter.x : sourceCenterX;
 			const targetCenterY = this.#playerDiscardSlotCenter ? this.#playerDiscardSlotCenter.y : sourceCenterY;
-			const drawCenterX = this.lerp(sourceCenterX, targetCenterX, eased);
-			const drawCenterY = this.lerp(sourceCenterY, targetCenterY, eased);
-			const alpha = 1 - progress * 0.85;
-			const drawLayout = {
-				x: drawCenterX - exitingEntry.layout.width * 0.5,
-				y: drawCenterY - exitingEntry.layout.height * 0.5,
-				width: exitingEntry.layout.width,
-				height: exitingEntry.layout.height,
-			};
-			this.drawCard(canvasRenderingContext, exitingEntry.card, drawLayout, alpha, false);
+			this.drawExitingCardEntry(canvasRenderingContext, exitingEntry, sourceCenterX, sourceCenterY, castCenter.x, castCenter.y, targetCenterX, targetCenterY, false);
 		}
-		// 적: 손에서 무덤(좌측) 으로.
+		// 적 카드.
 		for (const exitingEntry of this.#opponentExitingCards) {
-			const progress = 1 - exitingEntry.exitTime / EXIT_DURATION;
-			const eased = this.easeOutCubic(progress);
 			const sourceCenterX = exitingEntry.layout.x + exitingEntry.layout.width * 0.5;
 			const sourceCenterY = exitingEntry.layout.y + exitingEntry.layout.height * 0.5;
 			const targetCenterX = this.#opponentDiscardSlotCenter ? this.#opponentDiscardSlotCenter.x : sourceCenterX;
 			const targetCenterY = this.#opponentDiscardSlotCenter ? this.#opponentDiscardSlotCenter.y : sourceCenterY;
-			const drawCenterX = this.lerp(sourceCenterX, targetCenterX, eased);
-			const drawCenterY = this.lerp(sourceCenterY, targetCenterY, eased);
-			const alpha = 1 - progress * 0.85;
-			const drawLayout = {
-				x: drawCenterX - exitingEntry.layout.width * 0.5,
-				y: drawCenterY - exitingEntry.layout.height * 0.5,
-				width: exitingEntry.layout.width,
-				height: exitingEntry.layout.height,
-			};
 			const isFaceDown = !exitingEntry.isReveal;
-			this.drawCard(canvasRenderingContext, exitingEntry.card, drawLayout, alpha, isFaceDown);
+			this.drawExitingCardEntry(canvasRenderingContext, exitingEntry, sourceCenterX, sourceCenterY, castCenter.x, castCenter.y, targetCenterX, targetCenterY, isFaceDown);
 		}
+	}
+
+	//==============================================================================
+	// 사용 중 단일 카드 출력. 단계별 위치/크기/알파 계산.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { { card: Card, layout: { x: number, y: number, width: number, height: number }, elapsed: number, actorSide: string, targetSide: string, isReveal: boolean } } exitingEntry
+	 * @param { number } sourceCenterX
+	 * @param { number } sourceCenterY
+	 * @param { number } castCenterX
+	 * @param { number } castCenterY
+	 * @param { number } targetCenterX
+	 * @param { number } targetCenterY
+	 * @param { boolean } isFaceDown
+	 */
+	drawExitingCardEntry(canvasRenderingContext, exitingEntry, sourceCenterX, sourceCenterY, castCenterX, castCenterY, targetCenterX, targetCenterY, isFaceDown) {
+		const elapsed = exitingEntry.elapsed;
+		let drawCenterX = sourceCenterX;
+		let drawCenterY = sourceCenterY;
+		let cardScale = 1.0;
+		let alpha = 1.0;
+		if (elapsed < CARD_CAST_DURATION) {
+			// 1) cast: 손에서 발동 위치로 이동, 1.0 → CARD_CAST_SCALE.
+			const phaseT = elapsed / CARD_CAST_DURATION;
+			const easedT = this.easeOutCubic(phaseT);
+			drawCenterX = this.lerp(sourceCenterX, castCenterX, easedT);
+			drawCenterY = this.lerp(sourceCenterY, castCenterY, easedT);
+			cardScale = this.lerp(1.0, CARD_CAST_SCALE, easedT);
+			alpha = 1.0;
+		}
+		else if (elapsed < CARD_CAST_DURATION + CARD_HOLD_DURATION) {
+			// 2) hold: 발동 위치에 머무름, 미세 펄스.
+			const phaseT = (elapsed - CARD_CAST_DURATION) / CARD_HOLD_DURATION;
+			drawCenterX = castCenterX;
+			drawCenterY = castCenterY;
+			cardScale = CARD_CAST_SCALE + System.Math.sin(phaseT * System.Math.PI * 2.0) * 0.05;
+			alpha = 1.0;
+		}
+		else {
+			// 3) discard: 발동 위치에서 무덤으로, CARD_CAST_SCALE → CARD_DISCARD_END_SCALE + 페이드.
+			const phaseT = (elapsed - CARD_CAST_DURATION - CARD_HOLD_DURATION) / CARD_DISCARD_DURATION;
+			const easedT = this.easeOutCubic(phaseT);
+			drawCenterX = this.lerp(castCenterX, targetCenterX, easedT);
+			drawCenterY = this.lerp(castCenterY, targetCenterY, easedT);
+			cardScale = this.lerp(CARD_CAST_SCALE, CARD_DISCARD_END_SCALE, easedT);
+			alpha = 1.0 - phaseT * 0.5;
+		}
+
+		// 카드 내부 요소(폰트/원/여백 등)가 따로 늘었다 줄지 않도록 캔버스 변환으로 통째 스케일.
+		// 원래 layout 사이즈로 (0,0) 기준에 그리고, 외부에서 중심 정렬 + scale 만 적용.
+		const baseWidth = exitingEntry.layout.width;
+		const baseHeight = exitingEntry.layout.height;
+		const drawLayout = {
+			x: 0,
+			y: 0,
+			width: baseWidth,
+			height: baseHeight,
+		};
+		canvasRenderingContext.save();
+		canvasRenderingContext.translate(drawCenterX, drawCenterY);
+		canvasRenderingContext.scale(cardScale, cardScale);
+		canvasRenderingContext.translate(-baseWidth * 0.5, -baseHeight * 0.5);
+		this.drawCard(canvasRenderingContext, exitingEntry.card, drawLayout, alpha, isFaceDown);
+		canvasRenderingContext.restore();
+	}
+
+	//==============================================================================
+	// 카드 발동 위치 (무대 중앙) 계산.
+	//==============================================================================
+	/**
+	 * @param { { x: number, y: number, width: number, height: number } } popupRect
+	 * @returns { { x: number, y: number } }
+	 */
+	computeCastCenter(popupRect) {
+		const opponentHandTopY = popupRect.y + HAND_BOTTOM_MARGIN + (SLOT_HEIGHT - OPPONENT_CARD_HEIGHT) * 0.5;
+		const opponentSlotY = opponentHandTopY + (OPPONENT_CARD_HEIGHT - SLOT_HEIGHT) * 0.5;
+		const playerHandLineY = popupRect.y + popupRect.height - HAND_BOTTOM_MARGIN - PLAYER_CARD_HEIGHT * 0.5;
+		const playerSlotY = playerHandLineY - SLOT_HEIGHT * 0.5;
+		const stageAreaTop = opponentSlotY + SLOT_HEIGHT;
+		const stageAreaBottom = playerSlotY;
+		const castCenterX = popupRect.x + popupRect.width * 0.5;
+		const castCenterY = (stageAreaTop + stageAreaBottom) * 0.5;
+		return { x: castCenterX, y: castCenterY };
+	}
+
+	//==============================================================================
+	// 현재 cast/hold 단계에 있는 가장 최근 사용 카드 반환 (없으면 null).
+	// - 무대 캐릭터 인터랙션 계산용.
+	//==============================================================================
+	/**
+	 * @returns { { actorSide: string, targetSide: string, elapsed: number } | null }
+	 */
+	findActiveCast() {
+		let latest = null;
+		const allLists = [this.#playerExitingCards, this.#opponentExitingCards];
+		for (const list of allLists) {
+			for (const entry of list) {
+				if (entry.elapsed < CARD_CAST_DURATION + CARD_HOLD_DURATION) {
+					if (latest === null || entry.elapsed < latest.elapsed) {
+						latest = entry;
+					}
+				}
+			}
+		}
+		return latest;
+	}
+
+	//==============================================================================
+	// 무대 캐릭터에 적용할 인터랙션 효과 계산.
+	// - 시전자: cast/hold 동안 펄스 스케일.
+	// - 피격자(시전자와 다를 때): hold 동안 흔들림 + 붉은 플래시.
+	//==============================================================================
+	/**
+	 * @param { string } side
+	 * @param { { actorSide: string, targetSide: string, elapsed: number } | null } activeCast
+	 * @returns { { scale: number, offsetX: number, offsetY: number, flashIntensity: number } }
+	 */
+	computeStageInteraction(side, activeCast) {
+		const result = { scale: 1.0, offsetX: 0, offsetY: 0, flashIntensity: 0 };
+		if (activeCast === null) {
+			return result;
+		}
+		const elapsed = activeCast.elapsed;
+		const isInHoldPhase = elapsed >= CARD_CAST_DURATION;
+		if (side === activeCast.actorSide) {
+			const totalPhaseT = elapsed / (CARD_CAST_DURATION + CARD_HOLD_DURATION);
+			result.scale = 1.0 + System.Math.sin(totalPhaseT * System.Math.PI) * STAGE_ACTOR_PULSE_AMOUNT;
+		}
+		if (side === activeCast.targetSide && side !== activeCast.actorSide && isInHoldPhase) {
+			const holdT = (elapsed - CARD_CAST_DURATION) / CARD_HOLD_DURATION;
+			const decay = 1.0 - holdT;
+			result.offsetX = System.Math.sin(holdT * System.Math.PI * 8.0) * STAGE_TARGET_SHAKE_AMOUNT * decay;
+			result.flashIntensity = decay * STAGE_TARGET_FLASH_PEAK;
+		}
+		return result;
 	}
 
 	//==============================================================================
@@ -1701,8 +1988,9 @@ export class BattlePart extends Object {
 			canvasRenderingContext.lineWidth = cardBorderWidth;
 			canvasRenderingContext.strokeRect(cardLayout.x, cardLayout.y, cardLayout.width, cardLayout.height);
 
-			const titleFontSize = System.Math.max(11, System.Math.floor(cardLayout.width * 0.16));
-			const descriptionFontSize = System.Math.max(9, System.Math.floor(cardLayout.width * 0.12));
+			// 폰트 절대 크기: 기존 (84px 카드 기준 13/10) 의 75%. 1.5배 커진 카드 폭(126) 에 맞춘 계수.
+			const baseTitleFontSize = System.Math.max(8, System.Math.floor(cardLayout.width * 0.08));
+			const descriptionFontSize = System.Math.max(8, System.Math.floor(cardLayout.width * 0.07));
 			const nameAreaTop = cardLayout.y;
 			const nameAreaBottom = cardLayout.y + cardLayout.height * 0.22;
 			const descriptionAreaTop = cardLayout.y + cardLayout.height * 0.30;
@@ -1718,11 +2006,19 @@ export class BattlePart extends Object {
 			canvasRenderingContext.rect(cardLayout.x, cardLayout.y, cardLayout.width, cardLayout.height);
 			canvasRenderingContext.clip();
 
-			// 이름.
+			// 이름. 카드 폭에 맞춰 자동 축소 (최대 10자급 제목 수용).
 			canvasRenderingContext.fillStyle = "#ffffff";
-			canvasRenderingContext.font = `bold ${titleFontSize}px GyeonggiBatangBold`;
 			canvasRenderingContext.textAlign = "center";
 			canvasRenderingContext.textBaseline = "middle";
+			const titleMaxWidth = cardLayout.width - 8;
+			let titleFontSize = baseTitleFontSize;
+			canvasRenderingContext.font = `bold ${titleFontSize}px GyeonggiBatangBold`;
+			let titleMetrics = canvasRenderingContext.measureText(displayName);
+			while (titleMetrics.width > titleMaxWidth && titleFontSize > 7) {
+				titleFontSize -= 1;
+				canvasRenderingContext.font = `bold ${titleFontSize}px GyeonggiBatangBold`;
+				titleMetrics = canvasRenderingContext.measureText(displayName);
+			}
 			const nameCenterY = (nameAreaTop + nameAreaBottom) * 0.5;
 			canvasRenderingContext.fillText(displayName, cardLayout.x + cardLayout.width * 0.5, nameCenterY);
 
@@ -1880,6 +2176,228 @@ export class BattlePart extends Object {
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
 		canvasRenderingContext.fillText("행동 종료", x + END_TURN_BUTTON_WIDTH * 0.5, y + END_TURN_BUTTON_HEIGHT * 0.5);
+	}
+
+	//==============================================================================
+	// 4개 더미 슬롯 hit-test → 해당 더미 보기 팝업 열기.
+	// - 내 산패 / 내 묘패 / 적의 산패 / 적의 묘패.
+	// - 슬롯 위치는 draw() 에서 매 프레임 갱신되는 *SlotCenter 필드를 사용해 사각형으로 환원.
+	//==============================================================================
+	/**
+	 * @param { import("../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
+	 * @returns { boolean }
+	 */
+	tryOpenPileViewBySlotHit(viewInputPosition) {
+		const slotChecks = [
+			{ center: this.#playerDeckSlotCenter, title: "내 산패", cards: this.#player.deck },
+			{ center: this.#playerDiscardSlotCenter, title: "내 묘패", cards: this.#player.discard },
+			{ center: this.#opponentDeckSlotCenter, title: "적의 산패", cards: this.#opponent.deck },
+			{ center: this.#opponentDiscardSlotCenter, title: "적의 묘패", cards: this.#opponent.discard },
+		];
+		for (const slotCheck of slotChecks) {
+			if (!slotCheck.center) {
+				continue;
+			}
+			const slotRect = {
+				x: slotCheck.center.x - SLOT_WIDTH * 0.5,
+				y: slotCheck.center.y - SLOT_HEIGHT * 0.5,
+				width: SLOT_WIDTH,
+				height: SLOT_HEIGHT,
+			};
+			if (this.isInsideRect(viewInputPosition, slotRect)) {
+				this.openPileView(slotCheck.title, slotCheck.cards);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	//==============================================================================
+	// 더미 보기 팝업 열기.
+	//==============================================================================
+	/**
+	 * @param { string } title
+	 * @param { Card[] } cards
+	 */
+	openPileView(title, cards) {
+		this.#viewedPileTitle = title;
+		this.#viewedPileCards = cards;
+		this.#isDeckViewOpen = true;
+		const openAudioBeepPlayer = this.getAudioBeepPlayer();
+		if (openAudioBeepPlayer) {
+			openAudioBeepPlayer.playClick();
+		}
+	}
+
+	//==============================================================================
+	// 더미 보기 팝업.
+	// #viewedPileCards 의 카드를 같은 종류끼리 묶어 (cost, 이름) 오름차순으로 표시.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { { x: number, y: number, width: number, height: number } } popupRect
+	 */
+	drawDeckViewPopup(canvasRenderingContext, popupRect) {
+		// 어두운 백드롭 (전체 팝업 영역).
+		canvasRenderingContext.fillStyle = "rgba(0, 0, 0, 0.65)";
+		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
+
+		// 패널 영역 (popupRect 의 60% 폭, 78% 높이).
+		const panelWidth = System.Math.min(560, System.Math.floor(popupRect.width * 0.6));
+		const panelHeight = System.Math.min(640, System.Math.floor(popupRect.height * 0.78));
+		const panelX = popupRect.x + System.Math.floor((popupRect.width - panelWidth) * 0.5);
+		const panelY = popupRect.y + System.Math.floor((popupRect.height - panelHeight) * 0.5);
+		this.#deckViewPanelRect = { x: panelX, y: panelY, width: panelWidth, height: panelHeight };
+
+		// 패널 배경 + 골드 테두리.
+		canvasRenderingContext.fillStyle = "#1a1a2e";
+		canvasRenderingContext.fillRect(panelX, panelY, panelWidth, panelHeight);
+		canvasRenderingContext.strokeStyle = "#d4b46a";
+		canvasRenderingContext.lineWidth = 2;
+		canvasRenderingContext.strokeRect(panelX, panelY, panelWidth, panelHeight);
+
+		// 헤더 (타이틀 + 닫기 버튼).
+		const headerHeight = 44;
+		canvasRenderingContext.fillStyle = "#2a2a40";
+		canvasRenderingContext.fillRect(panelX, panelY, panelWidth, headerHeight);
+		canvasRenderingContext.fillStyle = "#ffffff";
+		canvasRenderingContext.font = "bold 18px GyeonggiBatangBold, sans-serif";
+		canvasRenderingContext.textAlign = "left";
+		canvasRenderingContext.textBaseline = "middle";
+		const titleText = `${this.#viewedPileTitle} (${this.#viewedPileCards.length}장)`;
+		canvasRenderingContext.fillText(titleText, panelX + 16, panelY + headerHeight * 0.5);
+
+		// 닫기 버튼 (헤더 우측).
+		const closeSize = 28;
+		const closeX = panelX + panelWidth - closeSize - 8;
+		const closeY = panelY + (headerHeight - closeSize) * 0.5;
+		this.#deckViewCloseRect = { x: closeX, y: closeY, width: closeSize, height: closeSize };
+		canvasRenderingContext.fillStyle = "#993333";
+		canvasRenderingContext.fillRect(closeX, closeY, closeSize, closeSize);
+		canvasRenderingContext.strokeStyle = "#ffffff";
+		canvasRenderingContext.lineWidth = 1;
+		canvasRenderingContext.strokeRect(closeX, closeY, closeSize, closeSize);
+		canvasRenderingContext.fillStyle = "#ffffff";
+		canvasRenderingContext.font = "bold 18px GyeonggiBatangBold, sans-serif";
+		canvasRenderingContext.textAlign = "center";
+		canvasRenderingContext.textBaseline = "middle";
+		canvasRenderingContext.fillText("X", closeX + closeSize * 0.5, closeY + closeSize * 0.5);
+
+		// 카드 목록 영역. 들어온 순서 그대로 (정렬/그룹핑 없음).
+		const listX = panelX + 16;
+		const listY = panelY + headerHeight + 12;
+		const listWidth = panelWidth - 32;
+		const listHeight = panelHeight - headerHeight - 24;
+		const rowHeight = 52;
+		const maxRows = System.Math.floor(listHeight / rowHeight);
+
+		if (this.#viewedPileCards.length === 0) {
+			canvasRenderingContext.fillStyle = "#888888";
+			canvasRenderingContext.font = "16px GyeonggiBatang, sans-serif";
+			canvasRenderingContext.textAlign = "center";
+			canvasRenderingContext.textBaseline = "middle";
+			canvasRenderingContext.fillText("비어있다.", panelX + panelWidth * 0.5, listY + listHeight * 0.5);
+			return;
+		}
+
+		const visibleCardCount = System.Math.min(this.#viewedPileCards.length, maxRows);
+		for (let rowIndex = 0; rowIndex < visibleCardCount; ++rowIndex) {
+			const card = this.#viewedPileCards[rowIndex];
+			const definition = this.findCardDefinition(card.cardId);
+			if (definition === null) {
+				continue;
+			}
+			const rowY = listY + rowIndex * rowHeight;
+
+			// 행 구분 줄 (얇은 underline).
+			canvasRenderingContext.strokeStyle = "rgba(255, 255, 255, 0.06)";
+			canvasRenderingContext.lineWidth = 1;
+			canvasRenderingContext.beginPath();
+			canvasRenderingContext.moveTo(listX, rowY + rowHeight - 1);
+			canvasRenderingContext.lineTo(listX + listWidth, rowY + rowHeight - 1);
+			canvasRenderingContext.stroke();
+
+			// cost 원 (행 좌측, 세로 중앙).
+			const costRadius = 13;
+			const costCenterX = listX + costRadius + 2;
+			const costCenterY = rowY + rowHeight * 0.5;
+			canvasRenderingContext.fillStyle = "#3a4a6a";
+			canvasRenderingContext.beginPath();
+			canvasRenderingContext.arc(costCenterX, costCenterY, costRadius, 0, System.Math.PI * 2);
+			canvasRenderingContext.fill();
+			canvasRenderingContext.strokeStyle = "#ffffff";
+			canvasRenderingContext.lineWidth = 1;
+			canvasRenderingContext.stroke();
+			canvasRenderingContext.fillStyle = "#ffffff";
+			canvasRenderingContext.font = "bold 14px GyeonggiBatangBold, sans-serif";
+			canvasRenderingContext.textAlign = "center";
+			canvasRenderingContext.textBaseline = "middle";
+			const costText = typeof definition.cost === "number" ? definition.cost.toString() : "0";
+			canvasRenderingContext.fillText(costText, costCenterX, costCenterY);
+
+			// 우측 정보 영역 (이름 + 설명).
+			const infoTextX = costCenterX + costRadius + 12;
+			const infoTextMaxWidth = listX + listWidth - infoTextX;
+
+			// 카드 이름 (상단).
+			canvasRenderingContext.fillStyle = "#ffffff";
+			canvasRenderingContext.font = "bold 16px GyeonggiBatangBold, sans-serif";
+			canvasRenderingContext.textAlign = "left";
+			canvasRenderingContext.textBaseline = "top";
+			const cardDisplayName = typeof definition.displayName === "string" ? definition.displayName : "";
+			canvasRenderingContext.fillText(cardDisplayName, infoTextX, rowY + 6);
+
+			// 카드 설명 (하단, 한 줄로 자르고 넘치면 줄임표).
+			canvasRenderingContext.fillStyle = "#bbbbbb";
+			canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
+			canvasRenderingContext.textAlign = "left";
+			canvasRenderingContext.textBaseline = "top";
+			const cardDescription = typeof definition.description === "string" ? definition.description : "";
+			const descriptionLine = this.fitTextToWidth(canvasRenderingContext, cardDescription, infoTextMaxWidth);
+			canvasRenderingContext.fillText(descriptionLine, infoTextX, rowY + 28);
+		}
+
+		// 잘린 행이 있으면 더 있다는 표시.
+		if (this.#viewedPileCards.length > visibleCardCount) {
+			const remaining = this.#viewedPileCards.length - visibleCardCount;
+			canvasRenderingContext.fillStyle = "#888888";
+			canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
+			canvasRenderingContext.textAlign = "center";
+			canvasRenderingContext.textBaseline = "bottom";
+			canvasRenderingContext.fillText(`(외 ${remaining}장 더)`, panelX + panelWidth * 0.5, panelY + panelHeight - 6);
+		}
+	}
+
+	//==============================================================================
+	// 한 줄로 자르되 폭을 넘기면 끝에 줄임표를 붙인다.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { string } text
+	 * @param { number } maxWidth
+	 * @returns { string }
+	 */
+	fitTextToWidth(canvasRenderingContext, text, maxWidth) {
+		if (text.length === 0) {
+			return "";
+		}
+		const fullMetrics = canvasRenderingContext.measureText(text);
+		if (fullMetrics.width <= maxWidth) {
+			return text;
+		}
+		const ellipsis = "…";
+		const ellipsisMetrics = canvasRenderingContext.measureText(ellipsis);
+		const ellipsisWidth = ellipsisMetrics.width;
+		let truncatedText = "";
+		for (let charIndex = 0; charIndex < text.length; ++charIndex) {
+			const tentative = truncatedText + text.charAt(charIndex);
+			const tentativeMetrics = canvasRenderingContext.measureText(tentative);
+			if (tentativeMetrics.width + ellipsisWidth > maxWidth) {
+				break;
+			}
+			truncatedText = tentative;
+		}
+		return truncatedText + ellipsis;
 	}
 
 	//==============================================================================
@@ -2235,13 +2753,18 @@ export class BattlePart extends Object {
 		const playerFigureCenterX = stageAreaCenterX - (STAGE_FIGURE_WIDTH * 0.5 + STAGE_FIGURE_GAP * 0.5);
 		const opponentFigureCenterX = stageAreaCenterX + (STAGE_FIGURE_WIDTH * 0.5 + STAGE_FIGURE_GAP * 0.5);
 
-		this.drawStageFigure(canvasRenderingContext, this.#player, playerFigureCenterX, stageAreaCenterY, true);
-		this.drawStageFigure(canvasRenderingContext, this.#opponent, opponentFigureCenterX, stageAreaCenterY, false);
+		const activeCast = this.findActiveCast();
+		const playerInteraction = this.computeStageInteraction(PlayerSide.player, activeCast);
+		const opponentInteraction = this.computeStageInteraction(PlayerSide.opponent, activeCast);
+
+		this.drawStageFigure(canvasRenderingContext, this.#player, playerFigureCenterX, stageAreaCenterY, true, playerInteraction);
+		this.drawStageFigure(canvasRenderingContext, this.#opponent, opponentFigureCenterX, stageAreaCenterY, false, opponentInteraction);
 	}
 
 	//==============================================================================
 	// 중앙 무대의 단일 캐릭터 자리표시 출력.
-	// 이미지 대체용으로 공간과 캐릭터의 존재만 알릴 정도로 최소화.
+	// - 자리표시 박스 + 이름 (이미지 대체용 최소 표현).
+	// - interaction 으로 시전자 펄스 / 피격자 흔들림·플래시 반영.
 	//==============================================================================
 	/**
 	 * @param { CanvasRenderingContext2D } canvasRenderingContext
@@ -2249,17 +2772,29 @@ export class BattlePart extends Object {
 	 * @param { number } centerX
 	 * @param { number } centerY
 	 * @param { boolean } isMe
+	 * @param { { scale: number, offsetX: number, offsetY: number, flashIntensity: number } } interaction
 	 */
-	drawStageFigure(canvasRenderingContext, playerState, centerX, centerY, isMe) {
-		const figureLeft = centerX - STAGE_FIGURE_WIDTH * 0.5;
-		const figureTop = centerY - STAGE_FIGURE_HEIGHT * 0.5;
+	drawStageFigure(canvasRenderingContext, playerState, centerX, centerY, isMe, interaction) {
+		const safeInteraction = interaction || { scale: 1.0, offsetX: 0, offsetY: 0, flashIntensity: 0 };
+		const drawCenterX = centerX + safeInteraction.offsetX;
+		const drawCenterY = centerY + safeInteraction.offsetY;
+		const drawWidth = STAGE_FIGURE_WIDTH * safeInteraction.scale;
+		const drawHeight = STAGE_FIGURE_HEIGHT * safeInteraction.scale;
+		const figureLeft = drawCenterX - drawWidth * 0.5;
+		const figureTop = drawCenterY - drawHeight * 0.5;
 
 		// 자리표시 박스.
 		canvasRenderingContext.fillStyle = "rgba(255, 255, 255, 0.04)";
-		canvasRenderingContext.fillRect(figureLeft, figureTop, STAGE_FIGURE_WIDTH, STAGE_FIGURE_HEIGHT);
+		canvasRenderingContext.fillRect(figureLeft, figureTop, drawWidth, drawHeight);
 		canvasRenderingContext.strokeStyle = "#888899";
 		canvasRenderingContext.lineWidth = 1;
-		canvasRenderingContext.strokeRect(figureLeft, figureTop, STAGE_FIGURE_WIDTH, STAGE_FIGURE_HEIGHT);
+		canvasRenderingContext.strokeRect(figureLeft, figureTop, drawWidth, drawHeight);
+
+		// 피격 플래시 (붉은 오버레이).
+		if (safeInteraction.flashIntensity > 0) {
+			canvasRenderingContext.fillStyle = `rgba(255, 80, 80, ${safeInteraction.flashIntensity})`;
+			canvasRenderingContext.fillRect(figureLeft, figureTop, drawWidth, drawHeight);
+		}
 
 		// 이름.
 		const label = playerState.nickname || (isMe ? "당신" : "적");
@@ -2267,7 +2802,7 @@ export class BattlePart extends Object {
 		canvasRenderingContext.font = "14px GyeonggiBatang";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(label, centerX, centerY);
+		canvasRenderingContext.fillText(label, drawCenterX, drawCenterY);
 	}
 
 	//==============================================================================
