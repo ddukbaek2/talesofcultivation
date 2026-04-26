@@ -93,6 +93,54 @@ const PlayerSide = System.Object.freeze({
 
 
 //==============================================================================
+// 단일 버프 / 디버프. id 는 bufftable.json 의 key, value 는 누적 강도.
+//==============================================================================
+class Buff extends Object {
+	//==============================================================================
+	// 멤버 변수 목록.
+	//==============================================================================
+	/** @type { string } */ id;
+	/** @type { number } */ value;
+
+	//==============================================================================
+	// 생성.
+	//==============================================================================
+	constructor(id, value) {
+		super();
+		this.id = id;
+		this.value = value;
+	}
+}
+
+
+//==============================================================================
+// 화면 위로 떠오르며 사라지는 단일 텍스트. (피해 / 회복 / 방어 등 즉시 피드백)
+//==============================================================================
+class FloatingText extends Object {
+	//==============================================================================
+	// 멤버 변수 목록.
+	//==============================================================================
+	/** @type { string } */ text;
+	/** @type { string } */ color;
+	/** @type { number } */ x;
+	/** @type { number } */ y;
+	/** @type { number } */ time;
+
+	//==============================================================================
+	// 생성.
+	//==============================================================================
+	constructor(text, color, x, y, time) {
+		super();
+		this.text = text;
+		this.color = color;
+		this.x = x;
+		this.y = y;
+		this.time = time;
+	}
+}
+
+
+//==============================================================================
 // 카드 인스턴스. cardId 는 외부 데이터 (cardtable.json) 의 카드 식별자.
 //==============================================================================
 class Card extends Object {
@@ -140,7 +188,7 @@ class PlayerState extends Object {
 	/** @type { Card[] } */ deck;
 	/** @type { Card[] } */ hand;
 	/** @type { Card[] } */ discard;
-	/** @type { Array<{ id: string, value: number }> } */ buffs;
+	/** @type { Buff[] } */ buffs;
 
 	//==============================================================================
 	// 생성.
@@ -211,7 +259,9 @@ export class BattlePart extends Object {
 	/** @private @type { { x: number, y: number } | null } */ #playerDiscardSlotCenter;
 	/** @private @type { { x: number, y: number } | null } */ #opponentDeckSlotCenter;
 	/** @private @type { { x: number, y: number } | null } */ #opponentDiscardSlotCenter;
-	/** @private @type { Array<{ text: string, color: string, x: number, y: number, time: number }> } */ #floatingTexts;
+	/** @private @type { FloatingText[] } */ #floatingTexts;
+	/** @private @type { { x: number, y: number } | null } */ #playerStageCenter;
+	/** @private @type { { x: number, y: number } | null } */ #opponentStageCenter;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
 
 	//==============================================================================
@@ -256,6 +306,8 @@ export class BattlePart extends Object {
 		this.#opponentDeckSlotCenter = null;
 		this.#opponentDiscardSlotCenter = null;
 		this.#floatingTexts = [];
+		this.#playerStageCenter = null;
+		this.#opponentStageCenter = null;
 		this.#audioBeepPlayer = null;
 	}
 
@@ -430,6 +482,8 @@ export class BattlePart extends Object {
 		this.#opponentDeckSlotCenter = null;
 		this.#opponentDiscardSlotCenter = null;
 		this.#floatingTexts = [];
+		this.#playerStageCenter = null;
+		this.#opponentStageCenter = null;
 		// 양쪽 캐릭터 정의에서 닉네임/경지/덱(cardIds) 가져오기. 정의 없으면 fallback.
 		this.applyCharacterToPlayer(this.#player, this.#playerCharacterId, "한두백");
 		this.applyCharacterToPlayer(this.#opponent, this.#opponentCharacterId, "적");
@@ -617,7 +671,7 @@ export class BattlePart extends Object {
 			}
 		}
 		else if (value > 0) {
-			playerState.buffs.push({ id: buffId, value: value });
+			playerState.buffs.push(new Buff(buffId, value));
 		}
 	}
 
@@ -678,18 +732,29 @@ export class BattlePart extends Object {
 				case "block": {
 					const blockValue = effect.value + dexterityBonus;
 					this.addBuff(actor, "block", blockValue);
+					this.spawnStageFloatingText(actor.side, `방 +${blockValue}`, "#88ccff");
 					break;
 				}
 				case "heal": {
+					const previousHealth = actor.health;
 					const healed = System.Math.min(actor.maxHealth, actor.health + effect.value);
 					actor.health = healed;
+					const healedAmount = healed - previousHealth;
+					if (healedAmount > 0) {
+						this.spawnStageFloatingText(actor.side, `+${healedAmount}`, "#5cff7c");
+					}
 					break;
 				}
 				case "actionPoint": {
+					const previousActionPoints = actor.actionPoints;
 					const restoredActionPoints = System.Math.min(actor.actionPointCap, actor.actionPoints + effect.value);
 					actor.actionPoints = restoredActionPoints;
 					if (actor.maxActionPoints < restoredActionPoints) {
 						actor.maxActionPoints = restoredActionPoints;
+					}
+					const restoredAmount = restoredActionPoints - previousActionPoints;
+					if (restoredAmount > 0) {
+						this.spawnStageFloatingText(actor.side, `행동력 +${restoredAmount}`, "#e2b94a");
 					}
 					break;
 				}
@@ -697,6 +762,7 @@ export class BattlePart extends Object {
 				case "vulnerable": {
 					// 디버프는 상대(target) 에게 부여한다.
 					this.addBuff(target, effect.type, effect.value);
+					this.spawnBuffFloatingText(target.side, effect.type, effect.value);
 					break;
 				}
 				case "strength":
@@ -705,6 +771,7 @@ export class BattlePart extends Object {
 				case "dodge":
 				case "empower": {
 					this.addBuff(actor, effect.type, effect.value);
+					this.spawnBuffFloatingText(actor.side, effect.type, effect.value);
 					break;
 				}
 			}
@@ -789,6 +856,7 @@ export class BattlePart extends Object {
 			if (dodgeBuff.value <= 0) {
 				target.buffs = target.buffs.filter((b) => b !== dodgeBuff);
 			}
+			this.spawnStageFloatingText(target.side, "회피!", "#aaccdd");
 			return;
 		}
 		let actualDamage = amount;
@@ -798,10 +866,11 @@ export class BattlePart extends Object {
 		}
 		let remaining = actualDamage;
 		const blockBuff = target.buffs.find((b) => b.id === "block");
+		let absorbedByBlock = 0;
 		if (blockBuff && blockBuff.value > 0) {
-			const absorbed = System.Math.min(blockBuff.value, remaining);
-			blockBuff.value -= absorbed;
-			remaining -= absorbed;
+			absorbedByBlock = System.Math.min(blockBuff.value, remaining);
+			blockBuff.value -= absorbedByBlock;
+			remaining -= absorbedByBlock;
 			if (blockBuff.value <= 0) {
 				target.buffs = target.buffs.filter((b) => b !== blockBuff);
 			}
@@ -810,6 +879,47 @@ export class BattlePart extends Object {
 		if (target.health < 0) {
 			target.health = 0;
 		}
+		// 플로팅 피드백: 방어 흡수 분과 체력 손실 분을 분리하여 표시.
+		if (absorbedByBlock > 0) {
+			this.spawnStageFloatingText(target.side, `방 -${absorbedByBlock}`, "#88ccff");
+		}
+		if (remaining > 0) {
+			this.spawnStageFloatingText(target.side, `-${remaining}`, "#ff5555");
+		}
+	}
+
+	//==============================================================================
+	// 무대(중앙) 캐릭터 위치에 플로팅 텍스트를 띄운다.
+	// 같은 위치에 여러 텍스트가 겹치지 않도록 약간의 무작위 오프셋을 준다.
+	//==============================================================================
+	/**
+	 * @param { string } side
+	 * @param { string } text
+	 * @param { string } color
+	 */
+	spawnStageFloatingText(side, text, color) {
+		const stageCenter = side === PlayerSide.player ? this.#playerStageCenter : this.#opponentStageCenter;
+		if (stageCenter === null) {
+			return;
+		}
+		const horizontalJitter = (System.Math.random() - 0.5) * STAGE_FIGURE_WIDTH * 0.6;
+		const verticalJitter = (System.Math.random() - 0.5) * STAGE_FIGURE_HEIGHT * 0.4;
+		this.addFloatingText(text, color, stageCenter.x + horizontalJitter, stageCenter.y + verticalJitter);
+	}
+
+	//==============================================================================
+	// 버프 부여 플로팅 텍스트 (버프 정의의 displayName / color 사용).
+	//==============================================================================
+	/**
+	 * @param { string } side
+	 * @param { string } buffKey
+	 * @param { number } value
+	 */
+	spawnBuffFloatingText(side, buffKey, value) {
+		const buffDefinition = this.findBuffDefinition(buffKey);
+		const buffName = buffDefinition && buffDefinition.displayName ? buffDefinition.displayName : buffKey;
+		const buffColor = buffDefinition && buffDefinition.color ? buffDefinition.color : "#ffffff";
+		this.spawnStageFloatingText(side, `${buffName} +${value}`, buffColor);
 	}
 
 	//==============================================================================
@@ -960,7 +1070,7 @@ export class BattlePart extends Object {
 	 * @param { number } y
 	 */
 	addFloatingText(text, color, x, y) {
-		this.#floatingTexts.push({ text: text, color: color, x: x, y: y, time: FLOATING_TEXT_DURATION });
+		this.#floatingTexts.push(new FloatingText(text, color, x, y, FLOATING_TEXT_DURATION));
 	}
 
 	//==============================================================================
@@ -1406,7 +1516,7 @@ export class BattlePart extends Object {
 		canvasRenderingContext.font = "bold 13px GyeonggiBatangBold";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(`행 ${playerState.actionPoints}/${playerState.maxActionPoints}`, textX + textWidth * 0.5, actionBarY + barHeight * 0.5);
+		canvasRenderingContext.fillText(`${playerState.actionPoints}/${playerState.maxActionPoints}`, textX + textWidth * 0.5, actionBarY + barHeight * 0.5);
 
 		// 영력바 (체력바와 동일 모양, 파란색).
 		const energyBarY = actionBarY + barHeight + 6;
@@ -1423,7 +1533,7 @@ export class BattlePart extends Object {
 		canvasRenderingContext.font = "bold 13px GyeonggiBatangBold";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(`영 ${playerState.currentEnergy}/${playerState.maxEnergy}`, textX + textWidth * 0.5, energyBarY + barHeight * 0.5);
+		canvasRenderingContext.fillText(`${playerState.currentEnergy}/${playerState.maxEnergy}`, textX + textWidth * 0.5, energyBarY + barHeight * 0.5);
 
 		// 버프 줄.
 		const buffsTopY = energyBarY + barHeight + 8;
@@ -1660,7 +1770,9 @@ export class BattlePart extends Object {
 		const cost = definition && typeof definition.cost === "number" ? definition.cost : 0;
 		const isAffordable = this.#player.actionPoints >= cost;
 		const isSelected = card.selectionProgress >= 0.5;
-		this.drawCard(canvasRenderingContext, card, localLayout, alpha, false, isAffordable, isSelected);
+		// 손패 카드는 현재 버프 상태가 반영된 설명을 표시 (피해 +힘 / 약화 / 취약 / 내공 등).
+		const effectiveDescription = this.getEffectiveCardDescription(definition, this.#player, this.#opponent);
+		this.drawCard(canvasRenderingContext, card, localLayout, alpha, false, isAffordable, isSelected, effectiveDescription);
 		canvasRenderingContext.restore();
 	}
 
@@ -1927,6 +2039,109 @@ export class BattlePart extends Object {
 	}
 
 	//==============================================================================
+	// 카드 effects 의 각 값에 actor / target 의 현재 버프 보정을 적용한 결과 배열.
+	// damage 효과는 strength + (attack 카드면 focus + 내공) + 약화 25% 감소 + target 취약 50% 증가 순.
+	// block 효과는 dexterity 가산. 그 외는 정의값 그대로.
+	//==============================================================================
+	/**
+	 * @param { Object } definition
+	 * @param { PlayerState } actor
+	 * @param { PlayerState | null } target
+	 * @returns { number[] }
+	 */
+	computeAdjustedEffectValues(definition, actor, target) {
+		const adjustedValues = [];
+		if (!definition || !System.Array.isArray(definition.effects)) {
+			return adjustedValues;
+		}
+		const strengthBuff = actor.buffs.find((b) => b.id === "strength");
+		const dexterityBuff = actor.buffs.find((b) => b.id === "dexterity");
+		const weakenBuff = actor.buffs.find((b) => b.id === "weaken");
+		const focusBuff = actor.buffs.find((b) => b.id === "focus");
+		const empowerBuff = actor.buffs.find((b) => b.id === "empower");
+		const targetVulnerableBuff = target ? target.buffs.find((b) => b.id === "vulnerable") : null;
+		const strengthBonus = strengthBuff ? strengthBuff.value : 0;
+		const dexterityBonus = dexterityBuff ? dexterityBuff.value : 0;
+		const weakenAmount = weakenBuff ? weakenBuff.value : 0;
+		const focusBonus = focusBuff ? focusBuff.value : 0;
+		const empowerBonus = empowerBuff ? empowerBuff.value : 0;
+		const targetVulnerableAmount = targetVulnerableBuff ? targetVulnerableBuff.value : 0;
+		const isAttackCard = definition.cardType === "attack";
+		for (const effect of definition.effects) {
+			if (effect.type === "damage") {
+				let damageValue = effect.value + strengthBonus;
+				if (isAttackCard) {
+					damageValue += focusBonus + empowerBonus;
+				}
+				if (weakenAmount > 0) {
+					damageValue = System.Math.floor(damageValue * 0.75);
+				}
+				if (targetVulnerableAmount > 0) {
+					damageValue = System.Math.floor(damageValue * 1.5);
+				}
+				if (damageValue < 0) {
+					damageValue = 0;
+				}
+				adjustedValues.push(damageValue);
+			}
+			else if (effect.type === "block") {
+				const blockValue = effect.value + dexterityBonus;
+				adjustedValues.push(blockValue);
+			}
+			else if (typeof effect.value === "number") {
+				adjustedValues.push(effect.value);
+			}
+		}
+		return adjustedValues;
+	}
+
+	//==============================================================================
+	// 카드 설명 안의 숫자를 effects 순서대로 보정값으로 치환.
+	// 정의에 effects 가 없거나 description 이 없으면 원문 반환.
+	//==============================================================================
+	/**
+	 * @param { Object } definition
+	 * @param { PlayerState } actor
+	 * @param { PlayerState | null } target
+	 * @returns { string }
+	 */
+	getEffectiveCardDescription(definition, actor, target) {
+		if (!definition || typeof definition.description !== "string") {
+			return "";
+		}
+		const baseDescription = definition.description;
+		const adjustedValues = this.computeAdjustedEffectValues(definition, actor, target);
+		if (adjustedValues.length === 0) {
+			return baseDescription;
+		}
+		let result = "";
+		let valueIndex = 0;
+		let charIndex = 0;
+		while (charIndex < baseDescription.length) {
+			const ch = baseDescription.charAt(charIndex);
+			if (ch >= "0" && ch <= "9") {
+				let endIndex = charIndex + 1;
+				while (endIndex < baseDescription.length && baseDescription.charAt(endIndex) >= "0" && baseDescription.charAt(endIndex) <= "9") {
+					endIndex += 1;
+				}
+				if (valueIndex < adjustedValues.length) {
+					result += adjustedValues[valueIndex].toString();
+					valueIndex += 1;
+				}
+				else {
+					result += baseDescription.slice(charIndex, endIndex);
+				}
+				charIndex = endIndex;
+			}
+			else {
+				result += ch;
+				charIndex += 1;
+			}
+		}
+		return result;
+	}
+
+	//==============================================================================
 	// 단일 카드 출력. 영력 cost 원의 배경색은 등급에 따른 색상 (GRADE_COLORS).
 	//==============================================================================
 	/**
@@ -1936,7 +2151,7 @@ export class BattlePart extends Object {
 	 * @param { number } alpha
 	 * @param { boolean } isFaceDown
 	 */
-	drawCard(canvasRenderingContext, card, cardLayout, alpha, isFaceDown, isAffordable, isSelected) {
+	drawCard(canvasRenderingContext, card, cardLayout, alpha, isFaceDown, isAffordable, isSelected, effectiveDescription) {
 		if (typeof isAffordable !== "boolean") {
 			isAffordable = true;
 		}
@@ -1975,7 +2190,7 @@ export class BattlePart extends Object {
 			const definition = this.findCardDefinition(card.cardId);
 			const cardColor = definition ? definition.color : "#666666";
 			const displayName = definition ? definition.displayName : "?";
-			const description = definition ? definition.description : "";
+			const description = typeof effectiveDescription === "string" ? effectiveDescription : (definition ? definition.description : "");
 			const cost = definition && typeof definition.cost === "number" ? definition.cost : 0;
 			const grade = definition && typeof definition.grade === "number" ? definition.grade : 1;
 			const gradeDefinition = this.findGradeDefinition(grade);
@@ -2540,8 +2755,9 @@ export class BattlePart extends Object {
 		const bodyFontSize = 13;
 
 		canvasRenderingContext.font = `${bodyFontSize}px GyeonggiBatang`;
-		const headerLine = `영력 ${definition.cost} · ${definition.grade}등급`;
-		const effectLines = this.formatCardEffectLines(definition);
+		const headerLine = `행동력 ${definition.cost} · ${definition.grade}등급`;
+		const adjustedEffectValues = this.computeAdjustedEffectValues(definition, this.#player, this.#opponent);
+		const effectLines = this.formatCardEffectLines(definition, adjustedEffectValues);
 		const allBodyLines = [];
 		allBodyLines.push(headerLine);
 		for (const line of effectLines) {
@@ -2613,30 +2829,38 @@ export class BattlePart extends Object {
 	 * @param { Object } definition
 	 * @returns { string[] }
 	 */
-	formatCardEffectLines(definition) {
+	formatCardEffectLines(definition, adjustedValues) {
 		const lines = [];
+		let valueIndex = 0;
 		for (const effect of definition.effects) {
+			const hasAdjustedValue = System.Array.isArray(adjustedValues) && valueIndex < adjustedValues.length;
+			const displayValue = hasAdjustedValue ? adjustedValues[valueIndex] : effect.value;
 			switch (effect.type) {
 				case "damage": {
-					lines.push(`${effect.value}의 피해를 입힌다`);
+					lines.push(`${displayValue}의 피해를 입힌다`);
 					break;
 				}
 				case "block": {
-					lines.push(`${effect.value}의 피해를 방어한다`);
+					lines.push(`${displayValue}의 피해를 방어한다`);
 					break;
 				}
 				case "heal": {
-					lines.push(`${effect.value}만큼 체력을 회복한다`);
+					lines.push(`${displayValue}만큼 체력을 회복한다`);
+					break;
+				}
+				case "actionPoint": {
+					lines.push(`행동력을 ${displayValue} 회복한다`);
 					break;
 				}
 				default: {
 					const buffDefinition = this.findBuffDefinition(effect.type);
 					if (buffDefinition) {
-						lines.push(`${buffDefinition.displayName} ${effect.value} 부여`);
+						lines.push(`${buffDefinition.displayName} ${displayValue} 부여`);
 					}
 					break;
 				}
 			}
+			valueIndex += 1;
 		}
 		return lines;
 	}
@@ -2752,6 +2976,10 @@ export class BattlePart extends Object {
 
 		const playerFigureCenterX = stageAreaCenterX - (STAGE_FIGURE_WIDTH * 0.5 + STAGE_FIGURE_GAP * 0.5);
 		const opponentFigureCenterX = stageAreaCenterX + (STAGE_FIGURE_WIDTH * 0.5 + STAGE_FIGURE_GAP * 0.5);
+
+		// 피격 / 회복 등 즉시 피드백 플로팅 텍스트 위치로 사용하기 위해 캐싱.
+		this.#playerStageCenter = { x: playerFigureCenterX, y: stageAreaCenterY };
+		this.#opponentStageCenter = { x: opponentFigureCenterX, y: stageAreaCenterY };
 
 		const activeCast = this.findActiveCast();
 		const playerInteraction = this.computeStageInteraction(PlayerSide.player, activeCast);
