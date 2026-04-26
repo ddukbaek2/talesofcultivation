@@ -17,7 +17,10 @@ import { ViewScaleMode } from "../libs/vanilla.js/src/core/viewmanager.js";
 import { Colors } from "../libs/vanilla.js/src/base/colors.js";
 import { MergeGame } from "./minigame/mergegame.js";
 import { BattlePart } from "./part/battlepart.js";
-import { NovelPart } from "./part/novelpart.js";
+import { DialoguePart } from "./part/dialoguepart.js";
+import { MapPart } from "./part/mappart.js";
+import { PlayerPart } from "./part/playerpart.js";
+import { DungeonPart } from "./part/dungeonpart.js";
 import { AudioBeepPlayer } from "./base/audiobeepplayer.js";
 
 
@@ -25,9 +28,12 @@ import { AudioBeepPlayer } from "./base/audiobeepplayer.js";
 // 활성 파트 식별자.
 //==============================================================================
 const PartKey = System.Object.freeze({
-	novel: "novel",
+	dialogue: "dialogue",
 	battle: "battle",
 	merge: "merge",
+	map: "map",
+	player: "player",
+	dungeon: "dungeon",
 });
 
 
@@ -75,12 +81,18 @@ export class TalesOfCultivation extends Scene {
 	/** @private @type { string } */ #loadingAssetPath;
 	/** @private @type { MergeGame } */ #mergeGame;
 	/** @private @type { BattlePart } */ #battlePart;
-	/** @private @type { NovelPart } */ #novelPart;
+	/** @private @type { DialoguePart } */ #dialoguePart;
+	/** @private @type { MapPart } */ #mapPart;
+	/** @private @type { PlayerPart } */ #playerPart;
+	/** @private @type { DungeonPart } */ #dungeonPart;
 	/** @private @type { AudioBeepPlayer } */ #audioBeepPlayer;
 	/** @private @type { string } */ #activePartKey;
 	/** @private @type { boolean } */ #prevIsKey1;
 	/** @private @type { boolean } */ #prevIsKey2;
 	/** @private @type { boolean } */ #prevIsKey3;
+	/** @private @type { boolean } */ #prevIsKey4;
+	/** @private @type { boolean } */ #prevIsKey5;
+	/** @private @type { boolean } */ #prevIsKey6;
 
 	//==============================================================================
 	// 생성.
@@ -110,17 +122,23 @@ export class TalesOfCultivation extends Scene {
 		this.#loadedAssetCount = 0;
 		this.#totalAssetCount = 0;
 		this.#loadingAssetPath = "";
-		// 파트 (팝업으로 표시됨). 게임 시작은 노벨 파트.
-		// 노벨 끝나면 자동으로 전투 파트로 전환.
-		// 키 1/2/3 또는 setActivePartKey 로 강제 전환 가능.
+		// 파트 (팝업으로 표시됨). 게임 시작은 대사 파트.
+		// 대사 끝나면 자동으로 전투 파트로 전환.
+		// 키 1~6 또는 setActivePartKey 로 강제 전환 가능 (1: 대사, 2: 전투, 3: 머지, 4: 맵, 5: 플레이어 정보, 6: 던전).
 		this.#mergeGame = new MergeGame();
 		this.#battlePart = new BattlePart();
-		this.#novelPart = new NovelPart();
+		this.#dialoguePart = new DialoguePart();
+		this.#mapPart = new MapPart();
+		this.#playerPart = new PlayerPart();
+		this.#dungeonPart = new DungeonPart();
 		this.#audioBeepPlayer = null;
-		this.#activePartKey = PartKey.novel;
+		this.#activePartKey = PartKey.dialogue;
 		this.#prevIsKey1 = false;
 		this.#prevIsKey2 = false;
 		this.#prevIsKey3 = false;
+		this.#prevIsKey4 = false;
+		this.#prevIsKey5 = false;
+		this.#prevIsKey6 = false;
 	}
 
 	//==============================================================================
@@ -204,15 +222,18 @@ export class TalesOfCultivation extends Scene {
 		const audioManager = engine.getAudioManager();
 		const audioContext = audioManager.getAudioContext();
 		this.#audioBeepPlayer = new AudioBeepPlayer(audioContext);
-		this.#novelPart.setAudioBeepPlayer(this.#audioBeepPlayer);
+		this.#dialoguePart.setAudioBeepPlayer(this.#audioBeepPlayer);
 		this.#battlePart.setAudioBeepPlayer(this.#audioBeepPlayer);
 		this.#mergeGame.setAudioBeepPlayer(this.#audioBeepPlayer);
+		this.#mapPart.setAudioBeepPlayer(this.#audioBeepPlayer);
+		this.#playerPart.setAudioBeepPlayer(this.#audioBeepPlayer);
+		this.#dungeonPart.setAudioBeepPlayer(this.#audioBeepPlayer);
 
-		// 노벨 대사 테이블 주입 후 인트로 장면 시작.
+		// 대사 테이블 주입 후 인트로 장면 시작.
 		const dialogueTableAsset = this.getLoadedJsonAsset(JsonId.dialogueTable);
 		if (dialogueTableAsset && System.Array.isArray(dialogueTableAsset.data)) {
-			this.#novelPart.setDialogues(dialogueTableAsset.data);
-			this.#novelPart.playScene("intro");
+			this.#dialoguePart.setDialogues(dialogueTableAsset.data);
+			this.#dialoguePart.playScene("intro");
 		}
 	}
 
@@ -234,13 +255,16 @@ export class TalesOfCultivation extends Scene {
 		// 개발자 도구 갱신 (항상 최우선).
 		this.#devtools.tick(unscaledTimeDelta);
 
-		// 파트 강제 전환 (1: 노벨, 2: 전투, 3: 머지). just-pressed 트리거.
+		// 파트 강제 전환 (1: 대사, 2: 전투, 3: 머지, 4: 맵, 5: 플레이어 정보, 6: 던전). just-pressed 트리거.
 		const inputManager = engine.getInputManager();
 		const isKey1 = inputManager.isKeyPressed("Digit1");
 		const isKey2 = inputManager.isKeyPressed("Digit2");
 		const isKey3 = inputManager.isKeyPressed("Digit3");
+		const isKey4 = inputManager.isKeyPressed("Digit4");
+		const isKey5 = inputManager.isKeyPressed("Digit5");
+		const isKey6 = inputManager.isKeyPressed("Digit6");
 		if (isKey1 && !this.#prevIsKey1) {
-			this.setActivePartKey(PartKey.novel);
+			this.setActivePartKey(PartKey.dialogue);
 		}
 		if (isKey2 && !this.#prevIsKey2) {
 			this.setActivePartKey(PartKey.battle);
@@ -248,18 +272,30 @@ export class TalesOfCultivation extends Scene {
 		if (isKey3 && !this.#prevIsKey3) {
 			this.setActivePartKey(PartKey.merge);
 		}
+		if (isKey4 && !this.#prevIsKey4) {
+			this.setActivePartKey(PartKey.map);
+		}
+		if (isKey5 && !this.#prevIsKey5) {
+			this.setActivePartKey(PartKey.player);
+		}
+		if (isKey6 && !this.#prevIsKey6) {
+			this.setActivePartKey(PartKey.dungeon);
+		}
 		this.#prevIsKey1 = isKey1;
 		this.#prevIsKey2 = isKey2;
 		this.#prevIsKey3 = isKey3;
+		this.#prevIsKey4 = isKey4;
+		this.#prevIsKey5 = isKey5;
+		this.#prevIsKey6 = isKey6;
 
 		// 활성 파트 갱신 (780x780 팝업 영역 안에서). 데브툴 패널 위에서는 입력 차단.
 		if (!this.isHierarchyCapturingInput()) {
 			const viewManager = engine.getViewManager();
 			const viewSize = viewManager.getViewSize();
 			const popupRect = this.computeMinigamePopupRect(viewSize);
-			if (this.#activePartKey === PartKey.novel) {
-				this.#novelPart.tick(timeDelta, inputManager, popupRect);
-				if (this.#novelPart.isFinished()) {
+			if (this.#activePartKey === PartKey.dialogue) {
+				this.#dialoguePart.tick(timeDelta, inputManager, popupRect);
+				if (this.#dialoguePart.isFinished()) {
 					this.setActivePartKey(PartKey.battle);
 				}
 			}
@@ -268,6 +304,15 @@ export class TalesOfCultivation extends Scene {
 			}
 			else if (this.#activePartKey === PartKey.merge) {
 				this.#mergeGame.tick(timeDelta, inputManager, popupRect);
+			}
+			else if (this.#activePartKey === PartKey.map) {
+				this.#mapPart.tick(timeDelta, inputManager, popupRect);
+			}
+			else if (this.#activePartKey === PartKey.player) {
+				this.#playerPart.tick(timeDelta, inputManager, popupRect);
+			}
+			else if (this.#activePartKey === PartKey.dungeon) {
+				this.#dungeonPart.tick(timeDelta, inputManager, popupRect);
 			}
 		}
 	}
@@ -326,14 +371,23 @@ export class TalesOfCultivation extends Scene {
 		canvasRenderingContext.strokeRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
 
 		// 활성 파트 출력 (팝업 내부에 한정).
-		if (this.#activePartKey === PartKey.novel) {
-			this.#novelPart.draw(graphic, popupRect);
+		if (this.#activePartKey === PartKey.dialogue) {
+			this.#dialoguePart.draw(graphic, popupRect);
 		}
 		else if (this.#activePartKey === PartKey.battle) {
 			this.#battlePart.draw(graphic, popupRect);
 		}
 		else if (this.#activePartKey === PartKey.merge) {
 			this.#mergeGame.draw(graphic, popupRect);
+		}
+		else if (this.#activePartKey === PartKey.map) {
+			this.#mapPart.draw(graphic, popupRect);
+		}
+		else if (this.#activePartKey === PartKey.player) {
+			this.#playerPart.draw(graphic, popupRect);
+		}
+		else if (this.#activePartKey === PartKey.dungeon) {
+			this.#dungeonPart.draw(graphic, popupRect);
 		}
 	}
 
@@ -358,14 +412,23 @@ export class TalesOfCultivation extends Scene {
 	 */
 	setActivePartKey(partKey) {
 		this.#activePartKey = partKey;
-		if (partKey === PartKey.novel) {
-			this.#novelPart.reset();
+		if (partKey === PartKey.dialogue) {
+			this.#dialoguePart.reset();
 		}
 		else if (partKey === PartKey.battle) {
 			this.#battlePart.reset();
 		}
 		else if (partKey === PartKey.merge) {
 			this.#mergeGame.reset();
+		}
+		else if (partKey === PartKey.map) {
+			this.#mapPart.reset();
+		}
+		else if (partKey === PartKey.player) {
+			this.#playerPart.reset();
+		}
+		else if (partKey === PartKey.dungeon) {
+			this.#dungeonPart.reset();
 		}
 	}
 

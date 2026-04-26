@@ -2,12 +2,10 @@
 	"files.exclude": {
 		"**/.git": true,
 		"**/.claude": true,
-		"**/.granite": true,
-		"**/docs": true,
+		"**/.logs": true,
 		"**/.DS_Store": true,
 		"**/node_modules": true,
 		"**/LICENSE": true,
-		"**/CLAUDE.md": true,
 		"**/package-lock.json": true,
 	},
 

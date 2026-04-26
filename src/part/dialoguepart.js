@@ -24,19 +24,47 @@ const CONTINUE_ICON_GAP = 10;
 
 
 //==============================================================================
-// 비주얼 노벨 파트.
-// - 외부에서 dialoguetable 의 모든 행을 setDialogues 로 받아둠.
-// - playScene(sceneName) 으로 특정 장면의 대사들만 sequence 순으로 추출해 시작.
-// - 대사 한 줄씩 타이핑 효과로 출력.
-// - 누르면 진행 (타이핑 중이면 즉시 완성, 완성 상태면 다음 대사).
-// - 마지막 대사 이후 한 번 더 누르면 isFinished = true.
+// 단일 대사 행 (dialoguetable.json 의 한 줄).
 //==============================================================================
-export class NovelPart extends Object {
+class DialogueLine extends Object {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
-	/** @private @type { Array<{ id: number, scene: string, sequence: number, speaker: string, text: string }> } */ #allDialogues;
-	/** @private @type { Array<{ id: number, scene: string, sequence: number, speaker: string, text: string }> } */ #dialogues;
+	/** @type { number } */ id;
+	/** @type { string } */ scene;
+	/** @type { number } */ sequence;
+	/** @type { string } */ speaker;
+	/** @type { string } */ text;
+
+	//==============================================================================
+	// 생성.
+	//==============================================================================
+	constructor(id, scene, sequence, speaker, text) {
+		super();
+		this.id = id;
+		this.scene = scene;
+		this.sequence = sequence;
+		this.speaker = speaker;
+		this.text = text;
+	}
+}
+
+
+//==============================================================================
+// 대사 파트 (구 NovelPart).
+// - 외부에서 dialoguetable 의 모든 행을 setDialogues 로 받아둠.
+// - playScene(sceneName) 으로 특정 장면의 대사들만 sequence 순으로 추출해 시작.
+// - 대사 한 줄씩 타이핑 효과로 출력.
+// - speaker 가 비어 있는 행은 나레이션 — 화자 이름 박스를 출력하지 않는다.
+// - 누르면 진행 (타이핑 중이면 즉시 완성, 완성 상태면 다음 대사).
+// - 마지막 대사 이후 한 번 더 누르면 isFinished = true.
+//==============================================================================
+export class DialoguePart extends Object {
+	//==============================================================================
+	// 멤버 변수 목록.
+	//==============================================================================
+	/** @private @type { DialogueLine[] } */ #allDialogues;
+	/** @private @type { DialogueLine[] } */ #dialogues;
 	/** @private @type { string } */ #currentScene;
 	/** @private @type { number } */ #currentIndex;
 	/** @private @type { number } */ #revealedChars;
@@ -64,13 +92,23 @@ export class NovelPart extends Object {
 	}
 
 	//==============================================================================
-	// 외부에서 대사 테이블 (모든 행) 주입.
+	// 외부에서 대사 테이블 (모든 행) 주입. plain object 배열을 DialogueLine 배열로 정규화.
 	//==============================================================================
 	/**
 	 * @param { Array<{ id: number, scene: string, sequence: number, speaker: string, text: string }> } allDialogues
 	 */
 	setDialogues(allDialogues) {
-		this.#allDialogues = System.Array.isArray(allDialogues) ? allDialogues : [];
+		const sourceArray = System.Array.isArray(allDialogues) ? allDialogues : [];
+		const normalizedDialogues = [];
+		for (const sourceRow of sourceArray) {
+			const rowId = typeof sourceRow.id === "number" ? sourceRow.id : 0;
+			const rowScene = typeof sourceRow.scene === "string" ? sourceRow.scene : "";
+			const rowSequence = typeof sourceRow.sequence === "number" ? sourceRow.sequence : 0;
+			const rowSpeaker = typeof sourceRow.speaker === "string" ? sourceRow.speaker : "";
+			const rowText = typeof sourceRow.text === "string" ? sourceRow.text : "";
+			normalizedDialogues.push(new DialogueLine(rowId, rowScene, rowSequence, rowSpeaker, rowText));
+		}
+		this.#allDialogues = normalizedDialogues;
 		// 현재 재생 중인 장면이 있으면 데이터 갱신 후 그 장면을 다시 추출.
 		if (this.#currentScene && this.#currentScene.length > 0) {
 			this.playScene(this.#currentScene);
@@ -123,7 +161,7 @@ export class NovelPart extends Object {
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { import("../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
+	 * @param { import("../../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	tick(timeDelta, inputManager, popupRect) {
@@ -233,7 +271,7 @@ export class NovelPart extends Object {
 	// 출력.
 	//==============================================================================
 	/**
-	 * @param { import("../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
+	 * @param { import("../../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	draw(graphic, popupRect) {
@@ -269,17 +307,21 @@ export class NovelPart extends Object {
 		canvasRenderingContext.strokeRect(textBoxX, textBoxY, textBoxWidth, TEXTBOX_HEIGHT);
 
 		// 화자 이름 박스 (대사 박스 좌상단 위로). 폭은 이름 길이에 맞춰 가변.
-		canvasRenderingContext.font = NAME_BOX_FONT;
-		const nameMetrics = canvasRenderingContext.measureText(currentDialogue.speaker);
-		const nameBoxWidth = System.Math.max(NAME_BOX_MIN_WIDTH, System.Math.ceil(nameMetrics.width) + NAME_BOX_PADDING_X * 2);
-		const nameBoxX = textBoxX + 24;
-		const nameBoxY = textBoxY - NAME_BOX_HEIGHT * 0.5;
-		canvasRenderingContext.fillStyle = "#d4b46a";
-		canvasRenderingContext.fillRect(nameBoxX, nameBoxY, nameBoxWidth, NAME_BOX_HEIGHT);
-		canvasRenderingContext.fillStyle = "#1a1a14";
-		canvasRenderingContext.textAlign = "center";
-		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(currentDialogue.speaker, nameBoxX + nameBoxWidth * 0.5, nameBoxY + NAME_BOX_HEIGHT * 0.5);
+		// 나레이션 (speaker 비어 있음) 인 경우 이름 박스 자체를 표시하지 않는다.
+		const speakerName = typeof currentDialogue.speaker === "string" ? currentDialogue.speaker : "";
+		if (speakerName.length > 0) {
+			canvasRenderingContext.font = NAME_BOX_FONT;
+			const nameMetrics = canvasRenderingContext.measureText(speakerName);
+			const nameBoxWidth = System.Math.max(NAME_BOX_MIN_WIDTH, System.Math.ceil(nameMetrics.width) + NAME_BOX_PADDING_X * 2);
+			const nameBoxX = textBoxX + 24;
+			const nameBoxY = textBoxY - NAME_BOX_HEIGHT * 0.5;
+			canvasRenderingContext.fillStyle = "#d4b46a";
+			canvasRenderingContext.fillRect(nameBoxX, nameBoxY, nameBoxWidth, NAME_BOX_HEIGHT);
+			canvasRenderingContext.fillStyle = "#1a1a14";
+			canvasRenderingContext.textAlign = "center";
+			canvasRenderingContext.textBaseline = "middle";
+			canvasRenderingContext.fillText(speakerName, nameBoxX + nameBoxWidth * 0.5, nameBoxY + NAME_BOX_HEIGHT * 0.5);
+		}
 
 		// 대사 본문 (자동 줄바꿈).
 		canvasRenderingContext.fillStyle = "#ffffff";
@@ -343,16 +385,16 @@ export class NovelPart extends Object {
 	wrapTextByWidth(canvasRenderingContext, text, maxWidth) {
 		const lines = [];
 		let currentLine = "";
-		for (const ch of text) {
-			if (ch === "\n") {
+		for (const character of text) {
+			if (character === "\n") {
 				lines.push(currentLine);
 				currentLine = "";
 				continue;
 			}
-			const tentative = currentLine + ch;
+			const tentative = currentLine + character;
 			if (canvasRenderingContext.measureText(tentative).width > maxWidth && currentLine.length > 0) {
 				lines.push(currentLine);
-				currentLine = ch;
+				currentLine = character;
 			}
 			else {
 				currentLine = tentative;
@@ -402,3 +444,9 @@ export class NovelPart extends Object {
 		return true;
 	}
 }
+
+
+//==============================================================================
+// 외부 사용을 위한 클래스 재공개.
+//==============================================================================
+export { DialogueLine };
