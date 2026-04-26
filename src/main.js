@@ -32,7 +32,6 @@ const PartKey = System.Object.freeze({
 	battle: "battle",
 	merge: "merge",
 	map: "map",
-	player: "player",
 	dungeon: "dungeon",
 });
 
@@ -92,7 +91,10 @@ export class TalesOfCultivation extends Scene {
 	/** @private @type { boolean } */ #prevIsKey3;
 	/** @private @type { boolean } */ #prevIsKey4;
 	/** @private @type { boolean } */ #prevIsKey5;
-	/** @private @type { boolean } */ #prevIsKey6;
+	/** @private @type { boolean } */ #prevIsKeyP;
+	/** @private @type { boolean } */ #isPlayerOverlayVisible;
+	/** @private @type { boolean } */ #prevIsTouchPressed;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #menuButtonRect;
 
 	//==============================================================================
 	// 생성.
@@ -124,7 +126,8 @@ export class TalesOfCultivation extends Scene {
 		this.#loadingAssetPath = "";
 		// 파트 (팝업으로 표시됨). 게임 시작은 대사 파트.
 		// 대사 끝나면 자동으로 전투 파트로 전환.
-		// 키 1~6 또는 setActivePartKey 로 강제 전환 가능 (1: 대사, 2: 전투, 3: 머지, 4: 맵, 5: 플레이어 정보, 6: 던전).
+		// 키 1~5 또는 setActivePartKey 로 강제 전환 가능 (1: 대사, 2: 전투, 3: 머지, 4: 맵, 5: 던전).
+		// P 키: 플레이어 정보창 오버레이 토글 (기저 파트 위에 덮임).
 		this.#mergeGame = new MergeGame();
 		this.#battlePart = new BattlePart();
 		this.#dialoguePart = new DialoguePart();
@@ -138,7 +141,10 @@ export class TalesOfCultivation extends Scene {
 		this.#prevIsKey3 = false;
 		this.#prevIsKey4 = false;
 		this.#prevIsKey5 = false;
-		this.#prevIsKey6 = false;
+		this.#prevIsKeyP = false;
+		this.#isPlayerOverlayVisible = false;
+		this.#prevIsTouchPressed = false;
+		this.#menuButtonRect = null;
 	}
 
 	//==============================================================================
@@ -255,14 +261,15 @@ export class TalesOfCultivation extends Scene {
 		// 개발자 도구 갱신 (항상 최우선).
 		this.#devtools.tick(unscaledTimeDelta);
 
-		// 파트 강제 전환 (1: 대사, 2: 전투, 3: 머지, 4: 맵, 5: 플레이어 정보, 6: 던전). just-pressed 트리거.
+		// 파트 강제 전환 (1: 대사, 2: 전투, 3: 머지, 4: 맵, 5: 던전). just-pressed 트리거.
+		// P: 플레이어 정보창 오버레이 토글 (기저 파트 위에 덮임).
 		const inputManager = engine.getInputManager();
 		const isKey1 = inputManager.isKeyPressed("Digit1");
 		const isKey2 = inputManager.isKeyPressed("Digit2");
 		const isKey3 = inputManager.isKeyPressed("Digit3");
 		const isKey4 = inputManager.isKeyPressed("Digit4");
 		const isKey5 = inputManager.isKeyPressed("Digit5");
-		const isKey6 = inputManager.isKeyPressed("Digit6");
+		const isKeyP = inputManager.isKeyPressed("KeyP");
 		if (isKey1 && !this.#prevIsKey1) {
 			this.setActivePartKey(PartKey.dialogue);
 		}
@@ -276,24 +283,51 @@ export class TalesOfCultivation extends Scene {
 			this.setActivePartKey(PartKey.map);
 		}
 		if (isKey5 && !this.#prevIsKey5) {
-			this.setActivePartKey(PartKey.player);
-		}
-		if (isKey6 && !this.#prevIsKey6) {
 			this.setActivePartKey(PartKey.dungeon);
+		}
+		if (isKeyP && !this.#prevIsKeyP) {
+			this.#isPlayerOverlayVisible = !this.#isPlayerOverlayVisible;
+			if (this.#isPlayerOverlayVisible) {
+				this.#playerPart.reset();
+			}
 		}
 		this.#prevIsKey1 = isKey1;
 		this.#prevIsKey2 = isKey2;
 		this.#prevIsKey3 = isKey3;
 		this.#prevIsKey4 = isKey4;
 		this.#prevIsKey5 = isKey5;
-		this.#prevIsKey6 = isKey6;
+		this.#prevIsKeyP = isKeyP;
+
+		// 우상단 메뉴 버튼 hit 검사 (모든 파트보다 우선). 클릭이 메뉴에서 소비되면 기저 파트로 전달하지 않음.
+		// 플레이어 오버레이가 떠 있으면 기저 파트는 입력을 받지 않고, 오버레이가 입력을 독점한다.
+		let consumedByMenuButton = false;
+		if (!this.isHierarchyCapturingInput()) {
+			const isTouchPressed = inputManager.isTouchPressed();
+			if (isTouchPressed && !this.#prevIsTouchPressed) {
+				const viewInputPosition = inputManager.getViewInputPosition();
+				if (this.#menuButtonRect && this.isInsideRect(viewInputPosition, this.#menuButtonRect)) {
+					this.#isPlayerOverlayVisible = !this.#isPlayerOverlayVisible;
+					if (this.#isPlayerOverlayVisible) {
+						this.#playerPart.reset();
+					}
+					if (this.#audioBeepPlayer) {
+						this.#audioBeepPlayer.playClick();
+					}
+					consumedByMenuButton = true;
+				}
+			}
+			this.#prevIsTouchPressed = isTouchPressed;
+		}
 
 		// 활성 파트 갱신 (780x780 팝업 영역 안에서). 데브툴 패널 위에서는 입력 차단.
-		if (!this.isHierarchyCapturingInput()) {
+		if (!this.isHierarchyCapturingInput() && !consumedByMenuButton) {
 			const viewManager = engine.getViewManager();
 			const viewSize = viewManager.getViewSize();
 			const popupRect = this.computeMinigamePopupRect(viewSize);
-			if (this.#activePartKey === PartKey.dialogue) {
+			if (this.#isPlayerOverlayVisible) {
+				this.#playerPart.tick(timeDelta, inputManager, popupRect);
+			}
+			else if (this.#activePartKey === PartKey.dialogue) {
 				this.#dialoguePart.tick(timeDelta, inputManager, popupRect);
 				if (this.#dialoguePart.isFinished()) {
 					this.setActivePartKey(PartKey.battle);
@@ -307,9 +341,6 @@ export class TalesOfCultivation extends Scene {
 			}
 			else if (this.#activePartKey === PartKey.map) {
 				this.#mapPart.tick(timeDelta, inputManager, popupRect);
-			}
-			else if (this.#activePartKey === PartKey.player) {
-				this.#playerPart.tick(timeDelta, inputManager, popupRect);
 			}
 			else if (this.#activePartKey === PartKey.dungeon) {
 				this.#dungeonPart.tick(timeDelta, inputManager, popupRect);
@@ -383,12 +414,72 @@ export class TalesOfCultivation extends Scene {
 		else if (this.#activePartKey === PartKey.map) {
 			this.#mapPart.draw(graphic, popupRect);
 		}
-		else if (this.#activePartKey === PartKey.player) {
-			this.#playerPart.draw(graphic, popupRect);
-		}
 		else if (this.#activePartKey === PartKey.dungeon) {
 			this.#dungeonPart.draw(graphic, popupRect);
 		}
+
+		// 플레이어 정보창 오버레이 (기저 파트 위에 어두운 백드롭 + PlayerPart 출력).
+		if (this.#isPlayerOverlayVisible) {
+			canvasRenderingContext.fillStyle = "rgba(0, 0, 0, 0.55)";
+			canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
+			this.#playerPart.draw(graphic, popupRect);
+		}
+
+		// 메뉴 바 (오버레이보다도 위에 그려서 항상 클릭 가능).
+		this.drawMenuBar(canvasRenderingContext, popupRect);
+	}
+
+	//==============================================================================
+	// 우상단 메뉴 바 출력 + hit 영역 갱신.
+	// - 클릭 시 PlayerPart 오버레이 토글 (P 키와 동일).
+	// - 오버레이 활성 상태에 따라 색상 변동.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { { x: number, y: number, width: number, height: number } } popupRect
+	 */
+	drawMenuBar(canvasRenderingContext, popupRect) {
+		const menuButtonSize = 44;
+		const menuButtonMargin = 12;
+		const menuButtonX = popupRect.x + popupRect.width - menuButtonSize - menuButtonMargin;
+		const menuButtonY = popupRect.y + menuButtonMargin;
+		this.#menuButtonRect = { x: menuButtonX, y: menuButtonY, width: menuButtonSize, height: menuButtonSize };
+
+		const isOpen = this.#isPlayerOverlayVisible;
+		canvasRenderingContext.fillStyle = isOpen ? "#3a2a55" : "#1a2240";
+		canvasRenderingContext.fillRect(menuButtonX, menuButtonY, menuButtonSize, menuButtonSize);
+		canvasRenderingContext.strokeStyle = "#d4b46a";
+		canvasRenderingContext.lineWidth = 2;
+		canvasRenderingContext.strokeRect(menuButtonX, menuButtonY, menuButtonSize, menuButtonSize);
+
+		// 햄버거 아이콘 (3줄).
+		canvasRenderingContext.strokeStyle = isOpen ? "#ffeecc" : "#ffffff";
+		canvasRenderingContext.lineWidth = 2;
+		const iconCenterX = menuButtonX + menuButtonSize * 0.5;
+		const iconCenterY = menuButtonY + menuButtonSize * 0.5;
+		const iconHalfWidth = menuButtonSize * 0.28;
+		const iconLineGap = 6;
+		for (let lineIndex = -1; lineIndex <= 1; ++lineIndex) {
+			const lineY = iconCenterY + lineIndex * iconLineGap;
+			canvasRenderingContext.beginPath();
+			canvasRenderingContext.moveTo(iconCenterX - iconHalfWidth, lineY);
+			canvasRenderingContext.lineTo(iconCenterX + iconHalfWidth, lineY);
+			canvasRenderingContext.stroke();
+		}
+	}
+
+	//==============================================================================
+	// 좌표가 사각형 내부인지 (메뉴 버튼 hit 등 공통 사용).
+	//==============================================================================
+	/**
+	 * @param { { x: number, y: number } } viewInputPosition
+	 * @param { { x: number, y: number, width: number, height: number } } rect
+	 * @returns { boolean }
+	 */
+	isInsideRect(viewInputPosition, rect) {
+		const insideX = viewInputPosition.x >= rect.x && viewInputPosition.x <= rect.x + rect.width;
+		const insideY = viewInputPosition.y >= rect.y && viewInputPosition.y <= rect.y + rect.height;
+		return insideX && insideY;
 	}
 
 	//==============================================================================
@@ -423,9 +514,6 @@ export class TalesOfCultivation extends Scene {
 		}
 		else if (partKey === PartKey.map) {
 			this.#mapPart.reset();
-		}
-		else if (partKey === PartKey.player) {
-			this.#playerPart.reset();
 		}
 		else if (partKey === PartKey.dungeon) {
 			this.#dungeonPart.reset();

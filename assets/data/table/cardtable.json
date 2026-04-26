@@ -10,6 +10,8 @@
 		"sect": 10000001,
 		"element": "metal",
 		"cardType": "attack",
+		"castLines": ["받아라!", "에잇!", "허업!"],
+		"receiveLines": ["크윽...", "큭!"],
 		"effects": [
 			{
 				"type": "damage",
@@ -82,6 +84,8 @@
 		"sect": 10000001,
 		"element": "metal",
 		"cardType": "attack",
+		"castLines": ["베어주마!", "쳐!", "갈라라!"],
+		"receiveLines": ["크흑!", "이런..."],
 		"effects": [
 			{
 				"type": "damage",
@@ -100,6 +104,8 @@
 		"sect": 10000001,
 		"element": "metal",
 		"cardType": "attack",
+		"castLines": ["받아 보아라!", "내려친다!"],
+		"receiveLines": ["윽!", "큭...!"],
 		"effects": [
 			{
 				"type": "damage",
@@ -172,6 +178,8 @@
 		"sect": 10000001,
 		"element": "metal",
 		"cardType": "attack",
+		"castLines": ["받아라!", "이거나 받아!"],
+		"receiveLines": ["흠..."],
 		"effects": [
 			{
 				"type": "damage",
@@ -284,6 +292,8 @@
 		"sect": 10000001,
 		"element": "wind",
 		"cardType": "buff",
+		"castLines": ["허허, 어디 한 번 견뎌 보거라.", "기운을 느껴 보아라."],
+		"receiveLines": ["크윽... 기운이 무겁다.", "이게 고수의 기운인가..."],
 		"effects": [
 			{
 				"type": "vulnerable",
@@ -306,6 +316,8 @@
 		"sect": 10000001,
 		"element": "metal",
 		"cardType": "attack",
+		"castLines": ["검을 받아라!", "이거나 받아 보거라.", "허업!"],
+		"receiveLines": ["크흑!", "윽..."],
 		"effects": [
 			{
 				"type": "damage",
@@ -360,6 +372,7 @@
 		"sect": 10000001,
 		"element": "wind",
 		"cardType": "buff",
+		"castLines": ["흐음...", "허허.", "...", "느긋하구먼."],
 		"effects": []
 	},
 	{

@@ -699,6 +699,9 @@ export class BattlePart extends Object {
 
 		actor.actionPoints -= cost;
 
+		// 카드 사용자(actor) 의 발화 대사 (정의에 castLines 가 있을 때).
+		this.spawnActorCastLine(actor, definition);
+
 		const strengthBuff = actor.buffs.find((b) => b.id === "strength");
 		const dexterityBuff = actor.buffs.find((b) => b.id === "dexterity");
 		const weakenBuff = actor.buffs.find((b) => b.id === "weaken");
@@ -727,6 +730,7 @@ export class BattlePart extends Object {
 						damageValue = 0;
 					}
 					this.applyDamage(target, damageValue);
+					this.spawnTargetReceiveLine(target, definition);
 					break;
 				}
 				case "block": {
@@ -763,6 +767,7 @@ export class BattlePart extends Object {
 					// 디버프는 상대(target) 에게 부여한다.
 					this.addBuff(target, effect.type, effect.value);
 					this.spawnBuffFloatingText(target.side, effect.type, effect.value);
+					this.spawnTargetReceiveLine(target, definition);
 					break;
 				}
 				case "strength":
@@ -905,6 +910,59 @@ export class BattlePart extends Object {
 		const horizontalJitter = (System.Math.random() - 0.5) * STAGE_FIGURE_WIDTH * 0.6;
 		const verticalJitter = (System.Math.random() - 0.5) * STAGE_FIGURE_HEIGHT * 0.4;
 		this.addFloatingText(text, color, stageCenter.x + horizontalJitter, stageCenter.y + verticalJitter);
+	}
+
+	//==============================================================================
+	// 카드 사용자 발화 대사 (카드 정의의 castLines 중 무작위 1개).
+	//==============================================================================
+	/**
+	 * @param { PlayerState } actor
+	 * @param { Object } definition
+	 */
+	spawnActorCastLine(actor, definition) {
+		if (!definition || !System.Array.isArray(definition.castLines) || definition.castLines.length === 0) {
+			return;
+		}
+		const lineIndex = System.Math.floor(System.Math.random() * definition.castLines.length);
+		const lineText = definition.castLines[lineIndex];
+		const speakerName = actor.nickname && actor.nickname.length > 0 ? actor.nickname : (actor.side === PlayerSide.player ? "당신" : "적");
+		this.spawnStageDialogueBubble(actor.side, `${speakerName}: ${lineText}`, "#ffffff");
+	}
+
+	//==============================================================================
+	// 카드 피적용자 반응 대사 (카드 정의의 receiveLines 중 무작위 1개).
+	//==============================================================================
+	/**
+	 * @param { PlayerState } target
+	 * @param { Object } definition
+	 */
+	spawnTargetReceiveLine(target, definition) {
+		if (!definition || !System.Array.isArray(definition.receiveLines) || definition.receiveLines.length === 0) {
+			return;
+		}
+		const lineIndex = System.Math.floor(System.Math.random() * definition.receiveLines.length);
+		const lineText = definition.receiveLines[lineIndex];
+		const speakerName = target.nickname && target.nickname.length > 0 ? target.nickname : (target.side === PlayerSide.player ? "당신" : "적");
+		this.spawnStageDialogueBubble(target.side, `${speakerName}: ${lineText}`, "#ffeecc");
+	}
+
+	//==============================================================================
+	// 무대 캐릭터 위에 길게 떠 있는 대사 말풍선 (수치 피드백보다 길게 표시).
+	//==============================================================================
+	/**
+	 * @param { string } side
+	 * @param { string } text
+	 * @param { string } color
+	 */
+	spawnStageDialogueBubble(side, text, color) {
+		const stageCenter = side === PlayerSide.player ? this.#playerStageCenter : this.#opponentStageCenter;
+		if (stageCenter === null) {
+			return;
+		}
+		const bubbleX = stageCenter.x;
+		const bubbleY = stageCenter.y - STAGE_FIGURE_HEIGHT * 0.5 - 18;
+		const bubbleDuration = FLOATING_TEXT_DURATION * 2.4;
+		this.#floatingTexts.push(new FloatingText(text, color, bubbleX, bubbleY, bubbleDuration));
 	}
 
 	//==============================================================================
@@ -2464,17 +2522,19 @@ export class BattlePart extends Object {
 		const panelY = popupRect.y + System.Math.floor((popupRect.height - panelHeight) * 0.5);
 		this.#deckViewPanelRect = { x: panelX, y: panelY, width: panelWidth, height: panelHeight };
 
-		// 패널 배경 + 골드 테두리.
+		// 패널 배경.
 		canvasRenderingContext.fillStyle = "#1a1a2e";
 		canvasRenderingContext.fillRect(panelX, panelY, panelWidth, panelHeight);
-		canvasRenderingContext.strokeStyle = "#d4b46a";
-		canvasRenderingContext.lineWidth = 2;
-		canvasRenderingContext.strokeRect(panelX, panelY, panelWidth, panelHeight);
 
-		// 헤더 (타이틀 + 닫기 버튼).
+		// 헤더 (타이틀 + 닫기 버튼) — 테두리보다 먼저 채워서 이후 stroke 가 헤더 위에 온전히 그려지도록 한다.
 		const headerHeight = 44;
 		canvasRenderingContext.fillStyle = "#2a2a40";
 		canvasRenderingContext.fillRect(panelX, panelY, panelWidth, headerHeight);
+
+		// 패널 골드 테두리 (헤더 채우기 후 마지막에 stroke 해 상하좌우 굵기를 동일하게 유지).
+		canvasRenderingContext.strokeStyle = "#d4b46a";
+		canvasRenderingContext.lineWidth = 2;
+		canvasRenderingContext.strokeRect(panelX, panelY, panelWidth, panelHeight);
 		canvasRenderingContext.fillStyle = "#ffffff";
 		canvasRenderingContext.font = "bold 18px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "left";
