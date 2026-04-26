@@ -16,7 +16,14 @@
       "Bash(node tools/build.cjs data tables)",
       "Bash(node -e ' *)",
       "Bash(node tools/build.cjs data all)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(awk 'NR>=215 && NR<=235' D:/Github/talesofcultivation/libs/vanilla.js/src/core/node/worldnode.js)",
+      "Bash(awk 'NR==36 || NR==37' D:/Github/talesofcultivation/libs/vanilla.js/src/core/node/worldnode.js)",
+      "Bash(git -C D:/Github/talesofcultivation show --stat 5f354135a68f7158301775cae247aa64a820cb18)",
+      "Bash(git -C D:/Github/talesofcultivation log --all --oneline)",
+      "Bash(git -C D:/Github/talesofcultivation -C libs/vanilla.js log --all --oneline)",
+      "Bash(git -C D:/Github/talesofcultivation/libs/vanilla.js show --stat 5f35413)",
+      "Bash(git -C D:/Github/talesofcultivation/libs/vanilla.js show 5f35413)"
     ]
   }
 }

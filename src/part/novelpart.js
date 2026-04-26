@@ -3,7 +3,7 @@
 //==============================================================================
 const System = globalThis;
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
-import { AudioBeepPlayer, BeepWaveform } from "../audiobeepplayer.js";
+import { AudioBeepPlayer, BeepWaveform } from "../base/audiobeepplayer.js";
 
 
 //==============================================================================
@@ -38,6 +38,7 @@ export class NovelPart extends Object {
 	/** @private @type { number } */ #revealedChars;
 	/** @private @type { boolean } */ #isFinished;
 	/** @private @type { boolean } */ #wasTouchPressed;
+	/** @private @type { boolean } */ #hasReceivedFirstInput;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
 
 	//==============================================================================
@@ -52,6 +53,7 @@ export class NovelPart extends Object {
 		this.#revealedChars = 0;
 		this.#isFinished = false;
 		this.#wasTouchPressed = false;
+		this.#hasReceivedFirstInput = false;
 		this.#audioBeepPlayer = null;
 	}
 
@@ -124,6 +126,25 @@ export class NovelPart extends Object {
 		}
 		if (this.#dialogues.length === 0) {
 			this.#isFinished = true;
+			return;
+		}
+
+		// 첫 입력 대기.
+		// 브라우저 자동재생 정책 때문에 첫 사용자 제스처 전에는 AudioContext 가 잠겨있어
+		// 비프음이 들리지 않는다. 첫 클릭으로 컨텍스트를 깨운 뒤 타이핑을 시작한다.
+		if (!this.#hasReceivedFirstInput) {
+			const firstIsPressed = inputManager.isTouchPressed();
+			if (firstIsPressed && !this.#wasTouchPressed) {
+				this.#hasReceivedFirstInput = true;
+				const startupAudioBeepPlayer = this.getAudioBeepPlayer();
+				if (startupAudioBeepPlayer) {
+					const startupAudioContext = startupAudioBeepPlayer.getAudioContext();
+					if (startupAudioContext && startupAudioContext.state === "suspended") {
+						startupAudioContext.resume();
+					}
+				}
+			}
+			this.#wasTouchPressed = firstIsPressed;
 			return;
 		}
 
@@ -249,16 +270,26 @@ export class NovelPart extends Object {
 			canvasRenderingContext.fillText(lines[i], textBoxX + textPaddingX, textBoxY + textPaddingY + i * lineHeight);
 		}
 
-		// 진행 안내 (타이핑 끝났을 때).
-		const fullyRevealed = this.#revealedChars >= currentDialogue.text.length;
-		if (fullyRevealed) {
+		// 진행 안내.
+		// 첫 입력 대기 상태에서는 타이핑이 멈춰 있으므로 "클릭하여 시작" 만 표시한다.
+		if (!this.#hasReceivedFirstInput) {
 			canvasRenderingContext.fillStyle = "#aaaaaa";
 			canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
 			canvasRenderingContext.textAlign = "right";
 			canvasRenderingContext.textBaseline = "bottom";
-			const isLast = this.#currentIndex + 1 >= this.#dialogues.length;
-			const guide = isLast ? "▼ 클릭하여 시작" : "▼ 클릭하여 계속";
-			canvasRenderingContext.fillText(guide, textBoxX + textBoxWidth - 16, textBoxY + TEXTBOX_HEIGHT - 12);
+			canvasRenderingContext.fillText("▼ 클릭하여 시작", textBoxX + textBoxWidth - 16, textBoxY + TEXTBOX_HEIGHT - 12);
+		}
+		else {
+			const fullyRevealed = this.#revealedChars >= currentDialogue.text.length;
+			if (fullyRevealed) {
+				canvasRenderingContext.fillStyle = "#aaaaaa";
+				canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
+				canvasRenderingContext.textAlign = "right";
+				canvasRenderingContext.textBaseline = "bottom";
+				const isLast = this.#currentIndex + 1 >= this.#dialogues.length;
+				const guide = isLast ? "▼ 클릭하여 시작" : "▼ 클릭하여 계속";
+				canvasRenderingContext.fillText(guide, textBoxX + textBoxWidth - 16, textBoxY + TEXTBOX_HEIGHT - 12);
+			}
 		}
 
 		// 페이지 표시 (우상단).

@@ -3,7 +3,7 @@
 //==============================================================================
 const System = globalThis;
 import { Vector2 } from "../../libs/vanilla.js/src/base/vector2.js";
-import { AudioBeepPlayer } from "../audiobeepplayer.js";
+import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 
 
 //==============================================================================

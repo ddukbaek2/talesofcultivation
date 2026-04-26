@@ -3,7 +3,7 @@
 //==============================================================================
 const System = globalThis;
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
-import { AudioBeepPlayer } from "../audiobeepplayer.js";
+import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 
 
 //==============================================================================
@@ -48,6 +48,11 @@ const FAN_MAX_TOTAL_SPREAD_DEG = 60;
 const BUFF_ICON_SIZE = 22;
 const BUFF_ICON_GAP = 4;
 const BUFFS_PER_ROW = 6;
+
+// 중앙 무대 (두 캐릭터 자리표시).
+const STAGE_FIGURE_WIDTH = 120;
+const STAGE_FIGURE_HEIGHT = 200;
+const STAGE_FIGURE_GAP = 240;
 
 
 //==============================================================================
@@ -1103,6 +1108,9 @@ export class BattlePart extends Object {
 		const playerPortraitX = popupRect.x + SIDE_MARGIN;
 		const playerPortraitY = playerSlotY - PORTRAIT_HEIGHT - 16;
 		this.drawPlayerPortrait(canvasRenderingContext, this.#player, playerPortraitX, playerPortraitY, PORTRAIT_WIDTH, PORTRAIT_HEIGHT, true);
+
+		// 중앙 무대 (이미지 없이 두 캐릭터를 도형으로 표현).
+		this.drawBattleStage(canvasRenderingContext, popupRect);
 
 		// 로그 (우측, 정보창 너비). 위/아래 모두 16 간격 (다른 영역들과 통일).
 		const logX = popupRect.x + popupRect.width - PORTRAIT_WIDTH - SIDE_MARGIN;
@@ -2203,6 +2211,63 @@ export class BattlePart extends Object {
 			lines.push(currentLine);
 		}
 		return lines;
+	}
+
+	//==============================================================================
+	// 중앙 무대.
+	// 적 슬롯 줄 아래와 내 슬롯 줄 위 사이의 빈 영역에 두 캐릭터(좌=내 캐릭터, 우=적)를
+	// 이미지 없이 도형(머리 + 도복 사다리꼴 + 그림자 + 이름)으로 표현한다.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { { x: number, y: number, width: number, height: number } } popupRect
+	 */
+	drawBattleStage(canvasRenderingContext, popupRect) {
+		const opponentHandTopY = popupRect.y + HAND_BOTTOM_MARGIN + (SLOT_HEIGHT - OPPONENT_CARD_HEIGHT) * 0.5;
+		const opponentSlotY = opponentHandTopY + (OPPONENT_CARD_HEIGHT - SLOT_HEIGHT) * 0.5;
+		const playerHandLineY = popupRect.y + popupRect.height - HAND_BOTTOM_MARGIN - PLAYER_CARD_HEIGHT * 0.5;
+		const playerSlotY = playerHandLineY - SLOT_HEIGHT * 0.5;
+		const stageAreaTop = opponentSlotY + SLOT_HEIGHT;
+		const stageAreaBottom = playerSlotY;
+		const stageAreaCenterX = popupRect.x + popupRect.width * 0.5;
+		const stageAreaCenterY = (stageAreaTop + stageAreaBottom) * 0.5;
+
+		const playerFigureCenterX = stageAreaCenterX - (STAGE_FIGURE_WIDTH * 0.5 + STAGE_FIGURE_GAP * 0.5);
+		const opponentFigureCenterX = stageAreaCenterX + (STAGE_FIGURE_WIDTH * 0.5 + STAGE_FIGURE_GAP * 0.5);
+
+		this.drawStageFigure(canvasRenderingContext, this.#player, playerFigureCenterX, stageAreaCenterY, true);
+		this.drawStageFigure(canvasRenderingContext, this.#opponent, opponentFigureCenterX, stageAreaCenterY, false);
+	}
+
+	//==============================================================================
+	// 중앙 무대의 단일 캐릭터 자리표시 출력.
+	// 이미지 대체용으로 공간과 캐릭터의 존재만 알릴 정도로 최소화.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { PlayerState } playerState
+	 * @param { number } centerX
+	 * @param { number } centerY
+	 * @param { boolean } isMe
+	 */
+	drawStageFigure(canvasRenderingContext, playerState, centerX, centerY, isMe) {
+		const figureLeft = centerX - STAGE_FIGURE_WIDTH * 0.5;
+		const figureTop = centerY - STAGE_FIGURE_HEIGHT * 0.5;
+
+		// 자리표시 박스.
+		canvasRenderingContext.fillStyle = "rgba(255, 255, 255, 0.04)";
+		canvasRenderingContext.fillRect(figureLeft, figureTop, STAGE_FIGURE_WIDTH, STAGE_FIGURE_HEIGHT);
+		canvasRenderingContext.strokeStyle = "#888899";
+		canvasRenderingContext.lineWidth = 1;
+		canvasRenderingContext.strokeRect(figureLeft, figureTop, STAGE_FIGURE_WIDTH, STAGE_FIGURE_HEIGHT);
+
+		// 이름.
+		const label = playerState.nickname || (isMe ? "당신" : "적");
+		canvasRenderingContext.fillStyle = "#cccccc";
+		canvasRenderingContext.font = "14px GyeonggiBatang";
+		canvasRenderingContext.textAlign = "center";
+		canvasRenderingContext.textBaseline = "middle";
+		canvasRenderingContext.fillText(label, centerX, centerY);
 	}
 
 	//==============================================================================

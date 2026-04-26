@@ -18,7 +18,7 @@ import { Colors } from "../libs/vanilla.js/src/base/colors.js";
 import { MergeGame } from "./minigame/mergegame.js";
 import { BattlePart } from "./part/battlepart.js";
 import { NovelPart } from "./part/novelpart.js";
-import { AudioBeepPlayer } from "./audiobeepplayer.js";
+import { AudioBeepPlayer } from "./base/audiobeepplayer.js";
 
 
 //==============================================================================
