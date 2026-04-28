@@ -9,14 +9,17 @@ import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 //==============================================================================
 // 상수.
 //==============================================================================
-const SIDE_MARGIN = 24;
-const HEADER_HEIGHT = 56;
+const SIDE_MARGIN = 32;
+const HEADER_HEIGHT = 64;
+const HEADER_TO_CONTENT_GAP = 20;
 const FOOTER_HEIGHT = 48;
 const NODE_LIST_WIDTH_RATIO = 0.36;
-const NODE_LIST_ROW_HEIGHT = 56;
-const NODE_LIST_ROW_GAP = 4;
-const ACTIVITY_BUTTON_HEIGHT = 44;
-const ACTIVITY_BUTTON_GAP = 8;
+const NODE_LIST_ROW_HEIGHT = 64;
+const NODE_LIST_ROW_GAP = 8;
+const NODE_LIST_INNER_PADDING = 16;
+const ACTIVITY_BUTTON_HEIGHT = 48;
+const ACTIVITY_BUTTON_GAP = 12;
+const DETAIL_INNER_PADDING = 20;
 
 
 //==============================================================================
@@ -314,12 +317,12 @@ export class MapPart extends Object {
 
 		// 컨텐츠 영역.
 		const contentX = popupRect.x + SIDE_MARGIN;
-		const contentY = popupRect.y + HEADER_HEIGHT;
+		const contentY = popupRect.y + HEADER_HEIGHT + HEADER_TO_CONTENT_GAP;
 		const contentWidth = popupRect.width - SIDE_MARGIN * 2;
-		const contentHeight = popupRect.height - HEADER_HEIGHT - FOOTER_HEIGHT;
+		const contentHeight = popupRect.height - HEADER_HEIGHT - HEADER_TO_CONTENT_GAP - FOOTER_HEIGHT - 16;
 		const nodeListWidth = System.Math.floor(contentWidth * NODE_LIST_WIDTH_RATIO);
-		const nodeDetailX = contentX + nodeListWidth + 16;
-		const nodeDetailWidth = contentWidth - nodeListWidth - 16;
+		const nodeDetailX = contentX + nodeListWidth + 20;
+		const nodeDetailWidth = contentWidth - nodeListWidth - 20;
 
 		this.drawNodeList(canvasRenderingContext, contentX, contentY, nodeListWidth, contentHeight);
 		this.drawNodeDetail(canvasRenderingContext, nodeDetailX, contentY, nodeDetailWidth, contentHeight);
@@ -336,13 +339,15 @@ export class MapPart extends Object {
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	drawHeader(canvasRenderingContext, popupRect) {
+		const headerRightInset = 140;
+		const headerBarWidth = popupRect.width - headerRightInset;
 		canvasRenderingContext.fillStyle = "#1a2240";
-		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, HEADER_HEIGHT);
+		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, headerBarWidth, HEADER_HEIGHT);
 		canvasRenderingContext.strokeStyle = "#d4b46a";
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.beginPath();
 		canvasRenderingContext.moveTo(popupRect.x, popupRect.y + HEADER_HEIGHT);
-		canvasRenderingContext.lineTo(popupRect.x + popupRect.width, popupRect.y + HEADER_HEIGHT);
+		canvasRenderingContext.lineTo(popupRect.x + headerBarWidth, popupRect.y + HEADER_HEIGHT);
 		canvasRenderingContext.stroke();
 
 		canvasRenderingContext.fillStyle = "#ffffff";
@@ -367,7 +372,7 @@ export class MapPart extends Object {
 			canvasRenderingContext.font = "16px GyeonggiBatang, sans-serif";
 			canvasRenderingContext.textAlign = "right";
 			canvasRenderingContext.textBaseline = "middle";
-			canvasRenderingContext.fillText(playerLabel, popupRect.x + popupRect.width - SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
+			canvasRenderingContext.fillText(playerLabel, popupRect.x + headerBarWidth - SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
 		}
 	}
 
@@ -395,8 +400,8 @@ export class MapPart extends Object {
 		canvasRenderingContext.textBaseline = "top";
 		canvasRenderingContext.fillText("지점", x + 12, y + 10);
 
-		const listTopY = y + 36;
-		const listInnerWidth = width - 16;
+		const listTopY = y + 48;
+		const listInnerWidth = width - NODE_LIST_INNER_PADDING * 2;
 		for (let nodeIndex = 0; nodeIndex < this.#nodes.length; ++nodeIndex) {
 			const node = this.#nodes[nodeIndex];
 			const rowX = x + 8;

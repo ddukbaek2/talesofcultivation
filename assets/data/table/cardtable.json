@@ -30,6 +30,7 @@
 		"sect": 10000001,
 		"element": "earth",
 		"cardType": "defense",
+		"castLines": ["흠!", "막아내겠다.", "여기다!"],
 		"effects": [
 			{
 				"type": "block",
@@ -48,6 +49,7 @@
 		"sect": 10000001,
 		"element": "wind",
 		"cardType": "buff",
+		"castLines": ["후우...", "한 호흡.", "정신을 가다듬자."],
 		"effects": [
 			{
 				"type": "actionPoint",
@@ -66,6 +68,7 @@
 		"sect": 10000001,
 		"element": "wind",
 		"cardType": "buff",
+		"castLines": ["휙!", "이얍!", "한 발 뒤로."],
 		"effects": [
 			{
 				"type": "dodge",
@@ -124,6 +127,8 @@
 		"sect": 10000001,
 		"element": "metal",
 		"cardType": "attack",
+		"castLines": ["찔러주마!", "한 점!", "여기!"],
+		"receiveLines": ["윽!", "허억!"],
 		"effects": [
 			{
 				"type": "damage",
@@ -142,6 +147,7 @@
 		"sect": 10000001,
 		"element": "earth",
 		"cardType": "defense",
+		"castLines": ["챙!", "받아치겠다!", "흠!"],
 		"effects": [
 			{
 				"type": "block",
@@ -160,6 +166,7 @@
 		"sect": 10000001,
 		"element": "wind",
 		"cardType": "buff",
+		"castLines": ["흠...", "기운을 모으자.", "한 점에 집중."],
 		"effects": [
 			{
 				"type": "focus",
@@ -336,6 +343,7 @@
 		"sect": 10000001,
 		"element": "earth",
 		"cardType": "defense",
+		"castLines": ["허허, 막아주마.", "버텨 보거라.", "흠!"],
 		"effects": [
 			{
 				"type": "block",
@@ -354,6 +362,7 @@
 		"sect": 10000001,
 		"element": "wind",
 		"cardType": "buff",
+		"castLines": ["호흡을 다스린다.", "기운이 모인다...", "흐읍— 후우."],
 		"effects": [
 			{
 				"type": "empower",

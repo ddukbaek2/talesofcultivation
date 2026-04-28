@@ -9,14 +9,15 @@ import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 //==============================================================================
 // 상수.
 //==============================================================================
-const SIDE_MARGIN = 24;
-const HEADER_HEIGHT = 56;
+const SIDE_MARGIN = 32;
+const HEADER_HEIGHT = 64;
+const HEADER_TO_CONTENT_GAP = 20;
 const FOOTER_HEIGHT = 48;
 const ROOM_LIST_WIDTH_RATIO = 0.36;
-const ROOM_LIST_ROW_HEIGHT = 56;
-const ROOM_LIST_ROW_GAP = 4;
-const ACTION_BUTTON_HEIGHT = 44;
-const ACTION_BUTTON_GAP = 8;
+const ROOM_LIST_ROW_HEIGHT = 64;
+const ROOM_LIST_ROW_GAP = 8;
+const ACTION_BUTTON_HEIGHT = 48;
+const ACTION_BUTTON_GAP = 12;
 
 
 //==============================================================================
@@ -462,12 +463,12 @@ export class DungeonPart extends Object {
 		// 진행 중 / 종료 분기 출력.
 		if (this.#outcome === DungeonOutcomeKind.inProgress) {
 			const contentX = popupRect.x + SIDE_MARGIN;
-			const contentY = popupRect.y + HEADER_HEIGHT;
+			const contentY = popupRect.y + HEADER_HEIGHT + HEADER_TO_CONTENT_GAP;
 			const contentWidth = popupRect.width - SIDE_MARGIN * 2;
-			const contentHeight = popupRect.height - HEADER_HEIGHT - FOOTER_HEIGHT;
+			const contentHeight = popupRect.height - HEADER_HEIGHT - HEADER_TO_CONTENT_GAP - FOOTER_HEIGHT - 16;
 			const roomListWidth = System.Math.floor(contentWidth * ROOM_LIST_WIDTH_RATIO);
-			const roomDetailX = contentX + roomListWidth + 16;
-			const roomDetailWidth = contentWidth - roomListWidth - 16;
+			const roomDetailX = contentX + roomListWidth + 20;
+			const roomDetailWidth = contentWidth - roomListWidth - 20;
 			this.drawRoomList(canvasRenderingContext, contentX, contentY, roomListWidth, contentHeight);
 			this.drawRoomDetail(canvasRenderingContext, roomDetailX, contentY, roomDetailWidth, contentHeight);
 		}
@@ -542,8 +543,8 @@ export class DungeonPart extends Object {
 			return;
 		}
 
-		const listTopY = y + 36;
-		const listInnerWidth = width - 16;
+		const listTopY = y + 48;
+		const listInnerWidth = width - 32;
 		for (let roomIndex = 0; roomIndex < this.#definition.rooms.length; ++roomIndex) {
 			const room = this.#definition.rooms[roomIndex];
 			const isReachable = this.isRoomReachable(room);

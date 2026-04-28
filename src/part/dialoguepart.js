@@ -4,6 +4,7 @@
 const System = globalThis;
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
 import { AudioBeepPlayer, BeepWaveform } from "../base/audiobeepplayer.js";
+import { isActionPressed, InputAction } from "../base/inputhint.js";
 
 
 //==============================================================================
@@ -70,6 +71,7 @@ export class DialoguePart extends Object {
 	/** @private @type { number } */ #revealedChars;
 	/** @private @type { boolean } */ #isFinished;
 	/** @private @type { boolean } */ #wasTouchPressed;
+	/** @private @type { boolean } */ #wasConfirmActionPressed;
 	/** @private @type { boolean } */ #hasReceivedFirstInput;
 	/** @private @type { number } */ #elapsedTime;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
@@ -86,6 +88,7 @@ export class DialoguePart extends Object {
 		this.#revealedChars = 0;
 		this.#isFinished = false;
 		this.#wasTouchPressed = false;
+		this.#wasConfirmActionPressed = false;
 		this.#hasReceivedFirstInput = false;
 		this.#elapsedTime = 0;
 		this.#audioBeepPlayer = null;
@@ -147,6 +150,14 @@ export class DialoguePart extends Object {
 	}
 
 	//==============================================================================
+	// 외부에서 (예: 타이틀 화면 시작 버튼) 이미 첫 사용자 제스처를 받은 경우 호출.
+	// 호출 시 "▼ 클릭하여 시작" 대기 상태를 건너뛰고 즉시 타이핑이 시작된다.
+	//==============================================================================
+	markFirstInputReceived() {
+		this.#hasReceivedFirstInput = true;
+	}
+
+	//==============================================================================
 	// 종료 여부 (모든 대사 끝남).
 	//==============================================================================
 	/**
@@ -154,6 +165,16 @@ export class DialoguePart extends Object {
 	 */
 	isFinished() {
 		return this.#isFinished;
+	}
+
+	//==============================================================================
+	// 현재 재생 중인 (혹은 마지막으로 재생한) 씬 이름.
+	//==============================================================================
+	/**
+	 * @returns { string }
+	 */
+	getCurrentScene() {
+		return this.#currentScene;
 	}
 
 	//==============================================================================
@@ -176,10 +197,12 @@ export class DialoguePart extends Object {
 
 		// 첫 입력 대기.
 		// 브라우저 자동재생 정책 때문에 첫 사용자 제스처 전에는 AudioContext 가 잠겨있어
-		// 비프음이 들리지 않는다. 첫 클릭으로 컨텍스트를 깨운 뒤 타이핑을 시작한다.
+		// 비프음이 들리지 않는다. 첫 클릭(또는 키/패드 confirm) 으로 컨텍스트를 깨운 뒤 타이핑을 시작한다.
 		if (!this.#hasReceivedFirstInput) {
 			const firstIsPressed = inputManager.isTouchPressed();
-			if (firstIsPressed && !this.#wasTouchPressed) {
+			const firstIsConfirmActive = isActionPressed(inputManager, InputAction.confirm);
+			const firstIsAdvanceJustPressed = (firstIsPressed && !this.#wasTouchPressed) || (firstIsConfirmActive && !this.#wasConfirmActionPressed);
+			if (firstIsAdvanceJustPressed) {
 				this.#hasReceivedFirstInput = true;
 				const startupAudioBeepPlayer = this.getAudioBeepPlayer();
 				if (startupAudioBeepPlayer) {
@@ -190,6 +213,7 @@ export class DialoguePart extends Object {
 				}
 			}
 			this.#wasTouchPressed = firstIsPressed;
+			this.#wasConfirmActionPressed = firstIsConfirmActive;
 			return;
 		}
 
@@ -236,15 +260,17 @@ export class DialoguePart extends Object {
 			return;
 		}
 
-		// 입력 처리 (just-pressed 트리거).
+		// 입력 처리 (just-pressed 트리거). 터치 또는 활성 입력 모드의 confirm 액션 (Enter / A) 둘 다 진행.
 		const isPressed = inputManager.isTouchPressed();
-		if (isPressed && !this.#wasTouchPressed) {
-			const clickAudioBeepPlayer = this.getAudioBeepPlayer();
+		const isConfirmActive = isActionPressed(inputManager, InputAction.confirm);
+		const isAdvanceJustPressed = (isPressed && !this.#wasTouchPressed) || (isConfirmActive && !this.#wasConfirmActionPressed);
+		if (isAdvanceJustPressed) {
+			const advanceAudioBeepPlayer = this.getAudioBeepPlayer();
 			if (!fullyRevealed) {
 				// 타이핑 중이면 즉시 완성.
 				this.#revealedChars = currentDialogue.text.length;
-				if (clickAudioBeepPlayer) {
-					clickAudioBeepPlayer.playClick();
+				if (advanceAudioBeepPlayer) {
+					advanceAudioBeepPlayer.playClick();
 				}
 			}
 			else {
@@ -252,19 +278,20 @@ export class DialoguePart extends Object {
 				if (this.#currentIndex + 1 < this.#dialogues.length) {
 					++this.#currentIndex;
 					this.#revealedChars = 0;
-					if (clickAudioBeepPlayer) {
-						clickAudioBeepPlayer.playClick();
+					if (advanceAudioBeepPlayer) {
+						advanceAudioBeepPlayer.playClick();
 					}
 				}
 				else {
 					this.#isFinished = true;
-					if (clickAudioBeepPlayer) {
-						clickAudioBeepPlayer.playConfirm();
+					if (advanceAudioBeepPlayer) {
+						advanceAudioBeepPlayer.playConfirm();
 					}
 				}
 			}
 		}
 		this.#wasTouchPressed = isPressed;
+		this.#wasConfirmActionPressed = isConfirmActive;
 	}
 
 	//==============================================================================

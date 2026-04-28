@@ -9,13 +9,16 @@ import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 //==============================================================================
 // 상수.
 //==============================================================================
-const SIDE_MARGIN = 24;
-const HEADER_HEIGHT = 56;
-const TAB_BAR_HEIGHT = 44;
-const TAB_GAP = 6;
-const FOOTER_HEIGHT = 40;
-const LIST_ROW_HEIGHT = 56;
-const LIST_ROW_GAP = 4;
+const SIDE_MARGIN = 32;
+const HEADER_HEIGHT = 64;
+const HEADER_TO_TAB_GAP = 16;
+const TAB_BAR_HEIGHT = 48;
+const TAB_GAP = 8;
+const TAB_TO_CONTENT_GAP = 16;
+const FOOTER_HEIGHT = 44;
+const CONTENT_INNER_PADDING = 20;
+const LIST_ROW_HEIGHT = 64;
+const LIST_ROW_GAP = 8;
 
 
 //==============================================================================
@@ -23,7 +26,9 @@ const LIST_ROW_GAP = 4;
 //==============================================================================
 const PlayerPartTabKey = System.Object.freeze({
 	profile: "profile",
+	realm: "realm",
 	inventory: "inventory",
+	equipment: "equipment",
 	deck: "deck",
 	abilities: "abilities",
 	relations: "relations",
@@ -93,7 +98,7 @@ class OwnedCardEntry extends Object {
 
 
 //==============================================================================
-// 능력 (패시브) 항목.
+// 특성 항목. grade 1~3 으로 등급 구분 (cardtable 의 grade 와 동일 단계).
 //==============================================================================
 class AbilityEntry extends Object {
 	//==============================================================================
@@ -103,16 +108,18 @@ class AbilityEntry extends Object {
 	/** @type { string } */ name;
 	/** @type { string } */ description;
 	/** @type { string } */ source;
+	/** @type { number } */ grade;
 
 	//==============================================================================
 	// 생성.
 	//==============================================================================
-	constructor(id, name, description, source) {
+	constructor(id, name, description, source, grade) {
 		super();
 		this.id = id;
 		this.name = name;
 		this.description = description;
 		this.source = source;
+		this.grade = grade;
 	}
 }
 
@@ -219,6 +226,60 @@ class CombatStatEntry extends Object {
 
 
 //==============================================================================
+// 장비 슬롯 한 줄. equippedItemId === 0 이면 빈 슬롯.
+//==============================================================================
+class EquipmentSlot extends Object {
+	//==============================================================================
+	// 멤버 변수 목록.
+	//==============================================================================
+	/** @type { string } */ slotKey;
+	/** @type { string } */ slotLabel;
+	/** @type { number } */ equippedItemId;
+	/** @type { string } */ equippedItemName;
+	/** @type { string } */ equippedItemDescription;
+
+	//==============================================================================
+	// 생성.
+	//==============================================================================
+	constructor(slotKey, slotLabel, equippedItemId, equippedItemName, equippedItemDescription) {
+		super();
+		this.slotKey = slotKey;
+		this.slotLabel = slotLabel;
+		this.equippedItemId = equippedItemId;
+		this.equippedItemName = equippedItemName;
+		this.equippedItemDescription = equippedItemDescription;
+	}
+}
+
+
+//==============================================================================
+// 경지 탭에 노출할 정보.
+// 경지는 세부 단계 없이 5단(범인 / 연기 / 결단 / 원영 / 화신) 만 존재하며,
+// 다음 경지로의 돌파는 자동 누적이 아니라 조건이 맞을 때 이벤트로 발생한다.
+//==============================================================================
+class RealmInfo extends Object {
+	//==============================================================================
+	// 멤버 변수 목록.
+	//==============================================================================
+	/** @type { string } */ currentRealmName;
+	/** @type { string } */ currentRealmDescription;
+	/** @type { string } */ nextRealmName;
+	/** @type { string } */ breakthroughHint;
+
+	//==============================================================================
+	// 생성.
+	//==============================================================================
+	constructor(currentRealmName, currentRealmDescription, nextRealmName, breakthroughHint) {
+		super();
+		this.currentRealmName = currentRealmName;
+		this.currentRealmDescription = currentRealmDescription;
+		this.nextRealmName = nextRealmName;
+		this.breakthroughHint = breakthroughHint;
+	}
+}
+
+
+//==============================================================================
 // 설정 항목 (토글 / 액션 공통). isToggle=true 면 isOn 으로 ON/OFF 표시.
 //==============================================================================
 class SettingEntry extends Object {
@@ -303,7 +364,7 @@ class TabButtonLayout extends Object {
 
 //==============================================================================
 // 플레이어 정보 파트.
-// - 상단 탭 (경지/스탯, 보유 물품, 산패, 능력, 관계, 일지) 으로 보유 정보를 분류 표시.
+// - 상단 탭 (상태, 경지, 물품, 장비, 산패, 특성, 관계, 일지, 설정) 으로 보유 정보를 분류 표시.
 // - 외부에서 setProfile / setInventory / setOwnedCards / setAbilities / setRelations / setJournal 로 데이터 주입.
 // - 직접 조작은 탭 전환만 (편성 / 사용 등은 추후 GrowthPart 등 별도 파트에서).
 //==============================================================================
@@ -324,10 +385,13 @@ export class PlayerPart extends Object {
 	/** @private @type { RelationEntry[] } */ #relations;
 	/** @private @type { JournalEntry[] } */ #journal;
 	/** @private @type { SettingEntry[] } */ #settings;
+	/** @private @type { EquipmentSlot[] } */ #equipment;
+	/** @private @type { RealmInfo | null } */ #realmInfo;
 	/** @private @type { string } */ #activeTabKey;
 	/** @private @type { TabButtonLayout[] } */ #tabButtonLayouts;
 	/** @private @type { SettingRowLayout[] } */ #settingRowLayouts;
 	/** @private @type { boolean } */ #wasTouchPressed;
+	/** @private @type { ((string) => void) | null } */ #onSettingActionInvoked;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
 
 	//==============================================================================
@@ -348,10 +412,13 @@ export class PlayerPart extends Object {
 		this.#relations = [];
 		this.#journal = [];
 		this.#settings = [];
+		this.#equipment = [];
+		this.#realmInfo = null;
 		this.#activeTabKey = PlayerPartTabKey.profile;
 		this.#tabButtonLayouts = [];
 		this.#settingRowLayouts = [];
 		this.#wasTouchPressed = false;
+		this.#onSettingActionInvoked = null;
 		this.#audioBeepPlayer = null;
 		this.installSampleData();
 	}
@@ -435,6 +502,27 @@ export class PlayerPart extends Object {
 		this.#settings = System.Array.isArray(settings) ? settings : [];
 	}
 
+	/**
+	 * @param { EquipmentSlot[] } equipment
+	 */
+	setEquipment(equipment) {
+		this.#equipment = System.Array.isArray(equipment) ? equipment : [];
+	}
+
+	/**
+	 * @param { RealmInfo } realmInfo
+	 */
+	setRealmInfo(realmInfo) {
+		this.#realmInfo = realmInfo;
+	}
+
+	/**
+	 * @param { (settingKey: string) => void } callback
+	 */
+	setOnSettingActionInvoked(callback) {
+		this.#onSettingActionInvoked = callback;
+	}
+
 	//==============================================================================
 	// 활성화 시 초기 입력 상태 리셋. (탭은 마지막 본 곳 유지)
 	//==============================================================================
@@ -478,18 +566,22 @@ export class PlayerPart extends Object {
 				return;
 			}
 		}
-		// 설정 탭 활성화 시 행 클릭 → 토글.
+		// 설정 탭 활성화 시 행 클릭 → 토글 또는 액션 콜백.
 		if (this.#activeTabKey === PlayerPartTabKey.settings) {
 			for (const settingRowLayout of this.#settingRowLayouts) {
 				if (this.isInsideRect(viewInputPosition, settingRowLayout.x, settingRowLayout.y, settingRowLayout.width, settingRowLayout.height)) {
 					const setting = settingRowLayout.setting;
+					const settingAudioBeepPlayer = this.getAudioBeepPlayer();
+					if (settingAudioBeepPlayer) {
+						settingAudioBeepPlayer.playConfirm();
+					}
 					if (setting.isToggle) {
 						setting.isOn = !setting.isOn;
 						setting.valueLabel = setting.isOn ? "켬" : "끔";
 					}
-					const settingAudioBeepPlayer = this.getAudioBeepPlayer();
-					if (settingAudioBeepPlayer) {
-						settingAudioBeepPlayer.playConfirm();
+					else if (this.#onSettingActionInvoked) {
+						// 비-토글 항목 (저장 / 불러오기 / 처음으로 등) 은 외부 매니저가 처리.
+						this.#onSettingActionInvoked(setting.key);
 					}
 					return;
 				}
@@ -514,15 +606,15 @@ export class PlayerPart extends Object {
 		// 헤더.
 		this.drawHeader(canvasRenderingContext, popupRect);
 
-		// 탭 바.
-		const tabBarY = popupRect.y + HEADER_HEIGHT;
+		// 탭 바 — 헤더의 골드 underline 과 충분한 간격.
+		const tabBarY = popupRect.y + HEADER_HEIGHT + HEADER_TO_TAB_GAP;
 		this.drawTabBar(canvasRenderingContext, popupRect.x + SIDE_MARGIN, tabBarY, popupRect.width - SIDE_MARGIN * 2);
 
-		// 컨텐츠 영역.
+		// 컨텐츠 영역 — 탭과도 떨어뜨리고 푸터와도 여백.
 		const contentX = popupRect.x + SIDE_MARGIN;
-		const contentY = tabBarY + TAB_BAR_HEIGHT + 8;
+		const contentY = tabBarY + TAB_BAR_HEIGHT + TAB_TO_CONTENT_GAP;
 		const contentWidth = popupRect.width - SIDE_MARGIN * 2;
-		const contentHeight = popupRect.height - (contentY - popupRect.y) - FOOTER_HEIGHT;
+		const contentHeight = popupRect.height - (contentY - popupRect.y) - FOOTER_HEIGHT - 16;
 		this.drawActiveTab(canvasRenderingContext, contentX, contentY, contentWidth, contentHeight);
 
 		// 푸터.
@@ -537,20 +629,23 @@ export class PlayerPart extends Object {
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	drawHeader(canvasRenderingContext, popupRect) {
+		// 우상단 메뉴 / 입력 아이콘이 차지하는 영역(약 140px) 은 헤더 바에서 비워둔다.
+		const headerRightInset = 140;
+		const headerBarWidth = popupRect.width - headerRightInset;
 		canvasRenderingContext.fillStyle = "#1a2240";
-		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, HEADER_HEIGHT);
+		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, headerBarWidth, HEADER_HEIGHT);
 		canvasRenderingContext.strokeStyle = "#d4b46a";
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.beginPath();
 		canvasRenderingContext.moveTo(popupRect.x, popupRect.y + HEADER_HEIGHT);
-		canvasRenderingContext.lineTo(popupRect.x + popupRect.width, popupRect.y + HEADER_HEIGHT);
+		canvasRenderingContext.lineTo(popupRect.x + headerBarWidth, popupRect.y + HEADER_HEIGHT);
 		canvasRenderingContext.stroke();
 
 		canvasRenderingContext.fillStyle = "#ffffff";
 		canvasRenderingContext.font = "bold 22px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText("정보", popupRect.x + SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
+		canvasRenderingContext.fillText("목록", popupRect.x + SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
 
 		const headerRightParts = [];
 		headerRightParts.push(`자금 ${this.#money}`);
@@ -563,7 +658,9 @@ export class PlayerPart extends Object {
 			canvasRenderingContext.font = "16px GyeonggiBatang, sans-serif";
 			canvasRenderingContext.textAlign = "right";
 			canvasRenderingContext.textBaseline = "middle";
-			canvasRenderingContext.fillText(headerRightText, popupRect.x + popupRect.width - SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
+			// 우상단 메뉴 / 입력모드 버튼 영역(약 120px) 을 피해 왼쪽으로 들여쓰기.
+			const headerRightInset = 120;
+			canvasRenderingContext.fillText(headerRightText, popupRect.x + popupRect.width - SIDE_MARGIN - headerRightInset, popupRect.y + HEADER_HEIGHT * 0.5);
 		}
 	}
 
@@ -580,7 +677,9 @@ export class PlayerPart extends Object {
 		this.#tabButtonLayouts = [];
 		const tabKeys = [
 			PlayerPartTabKey.profile,
+			PlayerPartTabKey.realm,
 			PlayerPartTabKey.inventory,
+			PlayerPartTabKey.equipment,
 			PlayerPartTabKey.deck,
 			PlayerPartTabKey.abilities,
 			PlayerPartTabKey.relations,
@@ -618,16 +717,22 @@ export class PlayerPart extends Object {
 	tabLabel(tabKey) {
 		switch (tabKey) {
 			case PlayerPartTabKey.profile: {
-				return "경지 / 스탯";
+				return "상태";
+			}
+			case PlayerPartTabKey.realm: {
+				return "경지";
 			}
 			case PlayerPartTabKey.inventory: {
-				return "보유 물품";
+				return "물품";
+			}
+			case PlayerPartTabKey.equipment: {
+				return "장비";
 			}
 			case PlayerPartTabKey.deck: {
 				return "산패";
 			}
 			case PlayerPartTabKey.abilities: {
-				return "능력";
+				return "특성";
 			}
 			case PlayerPartTabKey.relations: {
 				return "관계";
@@ -665,8 +770,16 @@ export class PlayerPart extends Object {
 				this.drawProfileTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
+			case PlayerPartTabKey.realm: {
+				this.drawRealmTab(canvasRenderingContext, x, y, width, height);
+				break;
+			}
 			case PlayerPartTabKey.inventory: {
 				this.drawInventoryTab(canvasRenderingContext, x, y, width, height);
+				break;
+			}
+			case PlayerPartTabKey.equipment: {
+				this.drawEquipmentTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
 			case PlayerPartTabKey.deck: {
@@ -693,7 +806,7 @@ export class PlayerPart extends Object {
 	}
 
 	//==============================================================================
-	// 경지 / 스탯 탭.
+	// 상태 탭.
 	// 상단: 이름 + 경지 + 종파 + 자금.
 	// 좌측 컬럼: 기본 스탯 (힘 / 민 / 지 / 운).
 	// 우측 컬럼: 전투 능력 (체력 / 기력 / 영력 / 공격력 / 수비력).
@@ -827,10 +940,10 @@ export class PlayerPart extends Object {
 	 * @param { number } height
 	 */
 	drawInventoryTab(canvasRenderingContext, x, y, width, height) {
-		this.drawListHeader(canvasRenderingContext, x, y, width, "보유 물품 (장비 / 보유물품 / 소모품)");
-		const listTopY = y + 36;
-		const listInnerWidth = width - 16;
-		const innerX = x + 8;
+		this.drawListHeader(canvasRenderingContext, x, y, width, "보유 물품 (보물 / 소모품)");
+		const listTopY = y + 48;
+		const listInnerWidth = width - 32;
+		const innerX = x + 16;
 		for (let entryIndex = 0; entryIndex < this.#inventory.length; ++entryIndex) {
 			const entry = this.#inventory[entryIndex];
 			const rowY = listTopY + entryIndex * (LIST_ROW_HEIGHT + LIST_ROW_GAP);
@@ -890,9 +1003,9 @@ export class PlayerPart extends Object {
 	 */
 	drawDeckTab(canvasRenderingContext, x, y, width, height) {
 		this.drawListHeader(canvasRenderingContext, x, y, width, "보유 카드");
-		const listTopY = y + 36;
-		const listInnerWidth = width - 16;
-		const innerX = x + 8;
+		const listTopY = y + 48;
+		const listInnerWidth = width - 32;
+		const innerX = x + 16;
 		for (let entryIndex = 0; entryIndex < this.#ownedCards.length; ++entryIndex) {
 			const entry = this.#ownedCards[entryIndex];
 			const rowY = listTopY + entryIndex * (LIST_ROW_HEIGHT + LIST_ROW_GAP);
@@ -963,7 +1076,7 @@ export class PlayerPart extends Object {
 	}
 
 	//==============================================================================
-	// 능력 탭.
+	// 특성 탭.
 	//==============================================================================
 	/**
 	 * @param { CanvasRenderingContext2D } canvasRenderingContext
@@ -973,10 +1086,10 @@ export class PlayerPart extends Object {
 	 * @param { number } height
 	 */
 	drawAbilitiesTab(canvasRenderingContext, x, y, width, height) {
-		this.drawListHeader(canvasRenderingContext, x, y, width, "보유 능력 (패시브)");
-		const listTopY = y + 36;
-		const listInnerWidth = width - 16;
-		const innerX = x + 8;
+		this.drawListHeader(canvasRenderingContext, x, y, width, "보유 특성");
+		const listTopY = y + 48;
+		const listInnerWidth = width - 32;
+		const innerX = x + 16;
 		for (let entryIndex = 0; entryIndex < this.#abilities.length; ++entryIndex) {
 			const entry = this.#abilities[entryIndex];
 			const rowY = listTopY + entryIndex * (LIST_ROW_HEIGHT + LIST_ROW_GAP);
@@ -986,7 +1099,7 @@ export class PlayerPart extends Object {
 			this.drawAbilityRow(canvasRenderingContext, entry, innerX, rowY, listInnerWidth, LIST_ROW_HEIGHT);
 		}
 		if (this.#abilities.length === 0) {
-			this.drawEmptyMessage(canvasRenderingContext, x, y, width, height, "능력이 없다.");
+			this.drawEmptyMessage(canvasRenderingContext, x, y, width, height, "특성이 없다.");
 		}
 	}
 
@@ -1005,15 +1118,34 @@ export class PlayerPart extends Object {
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.strokeRect(x, y, width, height);
 
+		// 등급 배지 (좌측 원). 1=청회, 2=청, 3=금.
+		const gradeBadgeRadius = 13;
+		const gradeBadgeCenterX = x + gradeBadgeRadius + 4;
+		const gradeBadgeCenterY = y + height * 0.5;
+		const gradeColor = entry.grade >= 3 ? "#d4b46a" : (entry.grade >= 2 ? "#88aaee" : "#7788aa");
+		canvasRenderingContext.fillStyle = gradeColor;
+		canvasRenderingContext.beginPath();
+		canvasRenderingContext.arc(gradeBadgeCenterX, gradeBadgeCenterY, gradeBadgeRadius, 0, System.Math.PI * 2);
+		canvasRenderingContext.fill();
+		canvasRenderingContext.strokeStyle = "#ffffff";
+		canvasRenderingContext.lineWidth = 1;
+		canvasRenderingContext.stroke();
+		canvasRenderingContext.fillStyle = entry.grade >= 3 ? "#222222" : "#ffffff";
+		canvasRenderingContext.font = "bold 13px GyeonggiBatangBold, sans-serif";
+		canvasRenderingContext.textAlign = "center";
+		canvasRenderingContext.textBaseline = "middle";
+		canvasRenderingContext.fillText(entry.grade.toString(), gradeBadgeCenterX, gradeBadgeCenterY);
+
+		const titleX = gradeBadgeCenterX + gradeBadgeRadius + 12;
 		canvasRenderingContext.fillStyle = "#ffffff";
 		canvasRenderingContext.font = "bold 15px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "top";
-		canvasRenderingContext.fillText(entry.name, x + 12, y + 8);
+		canvasRenderingContext.fillText(entry.name, titleX, y + 8);
 
 		canvasRenderingContext.fillStyle = "#aaaabb";
 		canvasRenderingContext.font = "12px GyeonggiBatang, sans-serif";
-		canvasRenderingContext.fillText(entry.description, x + 12, y + 30);
+		canvasRenderingContext.fillText(entry.description, titleX, y + 30);
 
 		if (entry.source.length > 0) {
 			canvasRenderingContext.fillStyle = "#ffcc88";
@@ -1036,9 +1168,9 @@ export class PlayerPart extends Object {
 	 */
 	drawRelationsTab(canvasRenderingContext, x, y, width, height) {
 		this.drawListHeader(canvasRenderingContext, x, y, width, "등장인물 관계");
-		const listTopY = y + 36;
-		const listInnerWidth = width - 16;
-		const innerX = x + 8;
+		const listTopY = y + 48;
+		const listInnerWidth = width - 32;
+		const innerX = x + 16;
 		for (let entryIndex = 0; entryIndex < this.#relations.length; ++entryIndex) {
 			const entry = this.#relations[entryIndex];
 			const rowY = listTopY + entryIndex * (LIST_ROW_HEIGHT + LIST_ROW_GAP);
@@ -1105,9 +1237,9 @@ export class PlayerPart extends Object {
 	 */
 	drawJournalTab(canvasRenderingContext, x, y, width, height) {
 		this.drawListHeader(canvasRenderingContext, x, y, width, "일지 (수행 기록)");
-		const listTopY = y + 36;
-		const listInnerWidth = width - 16;
-		const innerX = x + 8;
+		const listTopY = y + 48;
+		const listInnerWidth = width - 32;
+		const innerX = x + 16;
 		for (let entryIndex = 0; entryIndex < this.#journal.length; ++entryIndex) {
 			const entry = this.#journal[entryIndex];
 			const rowY = listTopY + entryIndex * (LIST_ROW_HEIGHT + LIST_ROW_GAP);
@@ -1152,6 +1284,134 @@ export class PlayerPart extends Object {
 	}
 
 	//==============================================================================
+	// 경지 탭. 현재 경지 / 설명 / 다음 경지까지 진척도.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { number } x
+	 * @param { number } y
+	 * @param { number } width
+	 * @param { number } height
+	 */
+	drawRealmTab(canvasRenderingContext, x, y, width, height) {
+		this.drawListHeader(canvasRenderingContext, x, y, width, "경지");
+		const innerX = x + 16;
+		const innerY = y + 40;
+
+		if (this.#realmInfo === null) {
+			this.drawEmptyMessage(canvasRenderingContext, x, y, width, height, "경지 정보가 없다.");
+			return;
+		}
+
+		// 현재 경지명.
+		canvasRenderingContext.fillStyle = "#ffffff";
+		canvasRenderingContext.font = "bold 22px GyeonggiBatangBold, sans-serif";
+		canvasRenderingContext.textAlign = "left";
+		canvasRenderingContext.textBaseline = "top";
+		canvasRenderingContext.fillText(this.#realmInfo.currentRealmName, innerX, innerY);
+
+		// 경지 설명 (자동 줄바꿈).
+		canvasRenderingContext.fillStyle = "#dddddd";
+		canvasRenderingContext.font = "14px GyeonggiBatang, sans-serif";
+		const descriptionLines = this.wrapTextByWidth(canvasRenderingContext, this.#realmInfo.currentRealmDescription, width - 32);
+		const descriptionTopY = innerY + 32;
+		const descriptionLineHeight = 20;
+		for (let lineIndex = 0; lineIndex < descriptionLines.length; ++lineIndex) {
+			canvasRenderingContext.fillText(descriptionLines[lineIndex], innerX, descriptionTopY + lineIndex * descriptionLineHeight);
+		}
+
+		// 다음 경지 + 돌파 조건 안내 (경지는 누적 진척이 아니라 이벤트로 돌파).
+		const nextRealmTopY = descriptionTopY + descriptionLines.length * descriptionLineHeight + 24;
+		canvasRenderingContext.fillStyle = "#ffcc88";
+		canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
+		canvasRenderingContext.textAlign = "left";
+		canvasRenderingContext.textBaseline = "top";
+		const nextRealmLabel = this.#realmInfo.nextRealmName.length > 0
+			? `다음 경지: ${this.#realmInfo.nextRealmName}`
+			: "다음 경지 없음 (최고 경지)";
+		canvasRenderingContext.fillText(nextRealmLabel, innerX, nextRealmTopY);
+
+		if (this.#realmInfo.nextRealmName.length > 0) {
+			const hintTopY = nextRealmTopY + 24;
+			canvasRenderingContext.fillStyle = "#aaaabb";
+			canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
+			canvasRenderingContext.fillText("돌파 조건", innerX, hintTopY);
+			canvasRenderingContext.fillStyle = "#dddddd";
+			canvasRenderingContext.font = "14px GyeonggiBatang, sans-serif";
+			const breakthroughText = this.#realmInfo.breakthroughHint.length > 0
+				? this.#realmInfo.breakthroughHint
+				: "조건이 맞는 이벤트에서 돌파한다.";
+			const hintLines = this.wrapTextByWidth(canvasRenderingContext, breakthroughText, width - 32);
+			for (let lineIndex = 0; lineIndex < hintLines.length; ++lineIndex) {
+				canvasRenderingContext.fillText(hintLines[lineIndex], innerX, hintTopY + 22 + lineIndex * descriptionLineHeight);
+			}
+		}
+	}
+
+	//==============================================================================
+	// 장비 탭. 슬롯별 한 줄 (장착 / 미장착).
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { number } x
+	 * @param { number } y
+	 * @param { number } width
+	 * @param { number } height
+	 */
+	drawEquipmentTab(canvasRenderingContext, x, y, width, height) {
+		this.drawListHeader(canvasRenderingContext, x, y, width, "장비");
+		const listTopY = y + 48;
+		const listInnerWidth = width - 32;
+		const innerX = x + 16;
+		for (let slotIndex = 0; slotIndex < this.#equipment.length; ++slotIndex) {
+			const equipmentSlot = this.#equipment[slotIndex];
+			const rowY = listTopY + slotIndex * (LIST_ROW_HEIGHT + LIST_ROW_GAP);
+			if (rowY + LIST_ROW_HEIGHT > y + height - 4) {
+				break;
+			}
+			this.drawEquipmentRow(canvasRenderingContext, equipmentSlot, innerX, rowY, listInnerWidth, LIST_ROW_HEIGHT);
+		}
+		if (this.#equipment.length === 0) {
+			this.drawEmptyMessage(canvasRenderingContext, x, y, width, height, "장비 슬롯이 없다.");
+		}
+	}
+
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { EquipmentSlot } equipmentSlot
+	 * @param { number } x
+	 * @param { number } y
+	 * @param { number } width
+	 * @param { number } height
+	 */
+	drawEquipmentRow(canvasRenderingContext, equipmentSlot, x, y, width, height) {
+		const isEquipped = equipmentSlot.equippedItemId !== 0;
+		const backgroundColor = isEquipped ? "#1f2a48" : "#16182a";
+		canvasRenderingContext.fillStyle = backgroundColor;
+		canvasRenderingContext.fillRect(x, y, width, height);
+		canvasRenderingContext.strokeStyle = isEquipped ? "#3a4a6a" : "#2a2a40";
+		canvasRenderingContext.lineWidth = 1;
+		canvasRenderingContext.strokeRect(x, y, width, height);
+
+		canvasRenderingContext.fillStyle = "#ffcc88";
+		canvasRenderingContext.font = "12px GyeonggiBatang, sans-serif";
+		canvasRenderingContext.textAlign = "left";
+		canvasRenderingContext.textBaseline = "top";
+		canvasRenderingContext.fillText(equipmentSlot.slotLabel, x + 12, y + 8);
+
+		const itemNameColor = isEquipped ? "#ffffff" : "#666677";
+		canvasRenderingContext.fillStyle = itemNameColor;
+		canvasRenderingContext.font = "bold 15px GyeonggiBatangBold, sans-serif";
+		canvasRenderingContext.fillText(isEquipped ? equipmentSlot.equippedItemName : "(비어 있음)", x + 80, y + 8);
+
+		if (isEquipped && equipmentSlot.equippedItemDescription.length > 0) {
+			canvasRenderingContext.fillStyle = "#aaaabb";
+			canvasRenderingContext.font = "12px GyeonggiBatang, sans-serif";
+			canvasRenderingContext.fillText(equipmentSlot.equippedItemDescription, x + 12, y + 30);
+		}
+	}
+
+	//==============================================================================
 	// 설정 탭. 행 클릭 → 토글 (isToggle=true 항목만).
 	//==============================================================================
 	/**
@@ -1164,9 +1424,9 @@ export class PlayerPart extends Object {
 	drawSettingsTab(canvasRenderingContext, x, y, width, height) {
 		this.#settingRowLayouts = [];
 		this.drawListHeader(canvasRenderingContext, x, y, width, "설정");
-		const listTopY = y + 36;
-		const listInnerWidth = width - 16;
-		const innerX = x + 8;
+		const listTopY = y + 48;
+		const listInnerWidth = width - 32;
+		const innerX = x + 16;
 		for (let entryIndex = 0; entryIndex < this.#settings.length; ++entryIndex) {
 			const entry = this.#settings[entryIndex];
 			const rowY = listTopY + entryIndex * (LIST_ROW_HEIGHT + LIST_ROW_GAP);
@@ -1292,7 +1552,7 @@ export class PlayerPart extends Object {
 	// 외부 데이터 주입 전 임시 샘플 데이터 (개발 중 미리보기용).
 	//==============================================================================
 	installSampleData() {
-		this.setProfile("한두백", "축기 1단", "검종", 1);
+		this.setProfile("한두백", "연기", "검종", 1);
 		this.setMoney(30);
 
 		const sampleBaseStats = [];
@@ -1311,10 +1571,23 @@ export class PlayerPart extends Object {
 		this.setCombatStats(sampleCombatStats);
 
 		const sampleInventory = [];
-		sampleInventory.push(new InventoryEntry(1, "철검", "장비 / 무기", "공격 카드의 피해 +1", 1));
-		sampleInventory.push(new InventoryEntry(2, "수련복", "장비 / 방어구", "최대 체력 +5", 1));
-		sampleInventory.push(new InventoryEntry(3, "영단", "소모품", "체력 10 회복", 2));
+		sampleInventory.push(new InventoryEntry(1, "영단", "소모품", "체력 10 회복", 2));
+		sampleInventory.push(new InventoryEntry(2, "검령패", "보물", "산패에 검술 카드 1장 추가", 1));
 		this.setInventory(sampleInventory);
+
+		const sampleEquipment = [];
+		sampleEquipment.push(new EquipmentSlot("weapon", "무기", 1, "철검", "공격 카드의 피해 +1"));
+		sampleEquipment.push(new EquipmentSlot("armor", "방어구", 2, "수련복", "최대 체력 +5"));
+		sampleEquipment.push(new EquipmentSlot("accessory", "장신구", 0, "", ""));
+		this.setEquipment(sampleEquipment);
+
+		const sampleRealmInfo = new RealmInfo(
+			"연기",
+			"기운을 단련하여 영기를 받아들이는 단계.",
+			"결단",
+			"검종 장로의 정식 인가를 받고 단을 응결시키는 의식을 치른다.",
+		);
+		this.setRealmInfo(sampleRealmInfo);
 
 		const sampleOwnedCards = [];
 		sampleOwnedCards.push(new OwnedCardEntry(11000001, "휘두르기", "검을 가로로 휘둘러 6의 피해", 1, 1, 1, true, false));
@@ -1324,7 +1597,9 @@ export class PlayerPart extends Object {
 		this.setOwnedCards(sampleOwnedCards);
 
 		const sampleAbilities = [];
-		sampleAbilities.push(new AbilityEntry(1, "검종 입문생", "전투 시작 시 행동력 +0", "검종 입문 시험 통과"));
+		sampleAbilities.push(new AbilityEntry(1, "검종 입문생", "전투 시작 시 행동력 +0", "검종 입문 시험 통과", 1));
+		sampleAbilities.push(new AbilityEntry(2, "단단한 호흡", "최대 체력 +5", "수련 누적", 2));
+		sampleAbilities.push(new AbilityEntry(3, "검의 직감", "공격 카드의 피해 +1", "비전 전수", 3));
 		this.setAbilities(sampleAbilities);
 
 		const sampleRelations = [];
@@ -1371,4 +1646,4 @@ export class PlayerPart extends Object {
 //==============================================================================
 // 외부 사용을 위한 식별자 / 클래스 재공개.
 //==============================================================================
-export { PlayerPartTabKey, InventoryEntry, OwnedCardEntry, AbilityEntry, RelationEntry, JournalEntry, BaseStatEntry, CombatStatEntry, SettingEntry };
+export { PlayerPartTabKey, InventoryEntry, OwnedCardEntry, AbilityEntry, RelationEntry, JournalEntry, BaseStatEntry, CombatStatEntry, SettingEntry, EquipmentSlot, RealmInfo };

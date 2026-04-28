@@ -33,5 +33,40 @@
 		"sequence": 5,
 		"speaker": "검종 장로",
 		"text": "내 검을 막아 보아라."
+	},
+	{
+		"id": 10000101,
+		"scene": "defeat",
+		"sequence": 1,
+		"speaker": "",
+		"text": "검광이 시야를 가르고 ─ 한두백의 의식이 흐려진다."
+	},
+	{
+		"id": 10000102,
+		"scene": "defeat",
+		"sequence": 2,
+		"speaker": "한두백",
+		"text": "윽… 아직, 멀었구나…"
+	},
+	{
+		"id": 10000103,
+		"scene": "defeat",
+		"sequence": 3,
+		"speaker": "검종 장로",
+		"text": "그 정도 의지로는 산을 오르기 어렵다."
+	},
+	{
+		"id": 10000104,
+		"scene": "defeat",
+		"sequence": 4,
+		"speaker": "검종 장로",
+		"text": "다시 와라. 내 검은 그때 다시 너를 맞이할 것이다."
+	},
+	{
+		"id": 10000105,
+		"scene": "defeat",
+		"sequence": 5,
+		"speaker": "",
+		"text": "그렇게 한두백의 첫 시험은 끝이 났다."
 	}
 ]

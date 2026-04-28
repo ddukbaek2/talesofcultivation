@@ -5,6 +5,10 @@
 		"realmId": 10000001,
 		"sectId": 10000001,
 		"description": "검종에 갓 입문한 젊은 수사.",
+		"baseStrength": 5,
+		"baseAgility": 4,
+		"baseIntellect": 6,
+		"baseLuck": 3,
 		"cardIds": [
 			11000001,
 			11000002,
@@ -28,6 +32,10 @@
 		"energyCap": 30,
 		"startingEnergy": 9,
 		"energyGainPerTurn": 3,
+		"baseStrength": 12,
+		"baseAgility": 9,
+		"baseIntellect": 14,
+		"baseLuck": 6,
 		"cardIds": [
 			12000014,
 			12000014,
@@ -42,6 +50,10 @@
 		"realmId": 10000003,
 		"sectId": 10000000,
 		"description": "종파를 떠난 방랑 수사.",
+		"baseStrength": 8,
+		"baseAgility": 7,
+		"baseIntellect": 5,
+		"baseLuck": 9,
 		"cardIds": [
 			11000001,
 			11000003,
