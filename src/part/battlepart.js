@@ -2939,9 +2939,7 @@ export class BattlePart extends Object {
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
 		canvasRenderingContext.fillText("전투 포기", x + END_TURN_BUTTON_WIDTH * 0.5, y + END_TURN_BUTTON_HEIGHT * 0.5);
-		if (enabled) {
-			drawInputHintBadge(canvasRenderingContext, InputAction.abandon, x, y + END_TURN_BUTTON_HEIGHT);
-		}
+		// 전투 포기는 키/패드 매핑 없음 — 버튼 클릭 전용. 힌트 배지 미출력.
 	}
 
 	drawEndTurnButton(canvasRenderingContext, x, y, enabled) {

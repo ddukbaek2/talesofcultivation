@@ -291,12 +291,12 @@ export class StoryBranchPart extends Object {
 		const headerRightInset = 140;
 		const headerBarWidth = popupRect.width - headerRightInset;
 		canvasRenderingContext.fillStyle = "#1a2240";
-		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, headerBarWidth, HEADER_HEIGHT);
+		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, HEADER_HEIGHT);
 		canvasRenderingContext.strokeStyle = "#d4b46a";
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.beginPath();
 		canvasRenderingContext.moveTo(popupRect.x, popupRect.y + HEADER_HEIGHT);
-		canvasRenderingContext.lineTo(popupRect.x + headerBarWidth, popupRect.y + HEADER_HEIGHT);
+		canvasRenderingContext.lineTo(popupRect.x + popupRect.width, popupRect.y + HEADER_HEIGHT);
 		canvasRenderingContext.stroke();
 
 		canvasRenderingContext.fillStyle = "#ffffff";
@@ -306,9 +306,9 @@ export class StoryBranchPart extends Object {
 		canvasRenderingContext.fillText("분기점", popupRect.x + SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
 
 		// 우측: 닫기(X) 버튼 + 진척도 (방문한 씬 수 / 전체).
-		// 닫기 버튼은 글로벌 메뉴/입력 아이콘 영역(우상단 140px) 보다 안쪽에 위치.
+		// 글로벌 메뉴/입력 아이콘이 우상단(140px) 을 차지하므로 그 안쪽에 배치.
 		const closeSize = 32;
-		const closeX = popupRect.x + headerBarWidth - SIDE_MARGIN - closeSize;
+		const closeX = popupRect.x + popupRect.width - headerRightInset - SIDE_MARGIN - closeSize;
 		const closeY = popupRect.y + (HEADER_HEIGHT - closeSize) * 0.5;
 		this.#closeButtonRect = { x: closeX, y: closeY, width: closeSize, height: closeSize };
 		canvasRenderingContext.fillStyle = "#993333";

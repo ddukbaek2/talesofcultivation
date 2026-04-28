@@ -111,10 +111,10 @@ export function resolveInputHintLabel(inputMode, actionKey) {
 				return new InputHintLabel("B", true);
 			}
 			case InputAction.endTurn: {
-				return new InputHintLabel("R1", false);
+				return new InputHintLabel("Y", true);
 			}
 			case InputAction.abandon: {
-				return new InputHintLabel("SHR", false);
+				return null;
 			}
 			case InputAction.previousTab: {
 				return new InputHintLabel("L1", false);
@@ -136,23 +136,23 @@ export function resolveInputHintLabel(inputMode, actionKey) {
 	if (inputMode === InputMode.keyboard) {
 		switch (actionKey) {
 			case InputAction.menu: {
-				return new InputHintLabel("P", true);
+				return new InputHintLabel("ESC", false);
 			}
 			case InputAction.confirm:
 			case InputAction.enterRoom:
 			case InputAction.completeRoom:
 			case InputAction.move: {
-				return new InputHintLabel("↵", true);
+				return new InputHintLabel("Z", true);
 			}
 			case InputAction.cancel:
 			case InputAction.escape: {
-				return new InputHintLabel("ESC", false);
+				return new InputHintLabel("X", true);
 			}
 			case InputAction.endTurn: {
-				return new InputHintLabel("SPC", false);
+				return new InputHintLabel("V", true);
 			}
 			case InputAction.abandon: {
-				return new InputHintLabel("BS", false);
+				return null;
 			}
 			case InputAction.previousTab: {
 				return new InputHintLabel("←", true);
@@ -239,23 +239,23 @@ export function drawInputHintBadge(canvasRenderingContext, actionKey, buttonLeft
 export function resolveKeyboardKeyCode(actionKey) {
 	switch (actionKey) {
 		case InputAction.menu: {
-			return "KeyP";
+			return "Escape";
 		}
 		case InputAction.confirm:
 		case InputAction.enterRoom:
 		case InputAction.completeRoom:
 		case InputAction.move: {
-			return "Enter";
+			return "KeyZ";
 		}
 		case InputAction.cancel:
 		case InputAction.escape: {
-			return "Escape";
+			return "KeyX";
 		}
 		case InputAction.endTurn: {
-			return "Space";
+			return "KeyV";
 		}
 		case InputAction.abandon: {
-			return "Backspace";
+			return null;
 		}
 		case InputAction.previousTab: {
 			return "BracketLeft";
@@ -300,10 +300,10 @@ export function resolveGamepadButtonIndex(actionKey) {
 			return GamepadButtonCode.B_CIRCLE;
 		}
 		case InputAction.endTurn: {
-			return GamepadButtonCode.R1;
+			return GamepadButtonCode.Y_TRIANGLE;
 		}
 		case InputAction.abandon: {
-			return GamepadButtonCode.SHARE_VIEW;
+			return -1;
 		}
 		case InputAction.previousTab: {
 			return GamepadButtonCode.L1;

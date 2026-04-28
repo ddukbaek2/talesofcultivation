@@ -375,10 +375,8 @@ export class TalesOfCultivation extends Scene {
 		const isKey3 = inputManager.isKeyPressed("Digit3");
 		const isKey4 = inputManager.isKeyPressed("Digit4");
 		const isKey5 = inputManager.isKeyPressed("Digit5");
-		// 메뉴 액션은 활성 입력 모드에 따라 자동 매핑 (키보드 P / 게임패드 OPTIONS).
-		// 키보드 모드에서는 ESC 도 추가로 메뉴 토글 (cancel 액션과 별개로 키 코드 직접 검사).
+		// 메뉴 액션은 활성 입력 모드에 따라 자동 매핑 (키보드 ESC / 게임패드 OPTIONS).
 		const isMenuActionActive = isActionPressed(inputManager, InputAction.menu);
-		const isEscapeMenuActive = inputManager.isKeyPressed("Escape");
 		const isKeyT = inputManager.isKeyPressed("KeyT");
 		if (isKey1 && !this.#prevIsKey1) {
 			this.setActivePartKey(PartKey.dialogue);
@@ -401,13 +399,6 @@ export class TalesOfCultivation extends Scene {
 				this.#playerPart.reset();
 			}
 		}
-		// ESC 키로도 동일 메뉴 토글 (cancel 매핑과 별도로 직접 감지).
-		if (isEscapeMenuActive && !this.#prevIsKeyEscapeMenu) {
-			this.#isPlayerOverlayVisible = !this.#isPlayerOverlayVisible;
-			if (this.#isPlayerOverlayVisible) {
-				this.#playerPart.reset();
-			}
-		}
 		// T 키로 분기점 뷰 토글 — 전투 / 맵 / 대사 등 일반 파트에서만 동작.
 		if (isKeyT && !this.#prevIsKeyT && this.canOpenStoryBranchView()) {
 			if (this.#activePartKey === PartKey.storyBranch) {
@@ -424,7 +415,6 @@ export class TalesOfCultivation extends Scene {
 		this.#prevIsKey4 = isKey4;
 		this.#prevIsKey5 = isKey5;
 		this.#prevIsKeyP = isMenuActionActive;
-		this.#prevIsKeyEscapeMenu = isEscapeMenuActive;
 		this.#prevIsKeyT = isKeyT;
 
 		// 입력 모드를 inputhint 모듈에 매 프레임 전파 (모든 파트의 버튼 힌트가 이 값에 따라 갱신됨).
@@ -621,9 +611,9 @@ export class TalesOfCultivation extends Scene {
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	drawMenuBar(canvasRenderingContext, popupRect) {
-		const buttonSize = 44;
-		const buttonMargin = 24;
-		const buttonGap = 12;
+		const buttonSize = 40;
+		const buttonMargin = 12;
+		const buttonGap = 10;
 		const menuButtonX = popupRect.x + popupRect.width - buttonSize - buttonMargin;
 		const menuButtonY = popupRect.y + buttonMargin;
 		const inputModeX = menuButtonX - buttonSize - buttonGap;

@@ -488,6 +488,8 @@ export class DungeonPart extends Object {
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	drawHeader(canvasRenderingContext, popupRect) {
+		const headerRightInset = 140;
+		const headerBarWidth = popupRect.width - headerRightInset;
 		canvasRenderingContext.fillStyle = "#241a3a";
 		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, HEADER_HEIGHT);
 		canvasRenderingContext.strokeStyle = "#d4b46a";
@@ -511,7 +513,7 @@ export class DungeonPart extends Object {
 			canvasRenderingContext.font = "16px GyeonggiBatang, sans-serif";
 			canvasRenderingContext.textAlign = "right";
 			canvasRenderingContext.textBaseline = "middle";
-			canvasRenderingContext.fillText(`진척 ${clearedRooms} / ${totalRooms}`, popupRect.x + popupRect.width - SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
+			canvasRenderingContext.fillText(`진척 ${clearedRooms} / ${totalRooms}`, popupRect.x + headerBarWidth - SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
 		}
 	}
 

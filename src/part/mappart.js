@@ -342,12 +342,12 @@ export class MapPart extends Object {
 		const headerRightInset = 140;
 		const headerBarWidth = popupRect.width - headerRightInset;
 		canvasRenderingContext.fillStyle = "#1a2240";
-		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, headerBarWidth, HEADER_HEIGHT);
+		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, HEADER_HEIGHT);
 		canvasRenderingContext.strokeStyle = "#d4b46a";
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.beginPath();
 		canvasRenderingContext.moveTo(popupRect.x, popupRect.y + HEADER_HEIGHT);
-		canvasRenderingContext.lineTo(popupRect.x + headerBarWidth, popupRect.y + HEADER_HEIGHT);
+		canvasRenderingContext.lineTo(popupRect.x + popupRect.width, popupRect.y + HEADER_HEIGHT);
 		canvasRenderingContext.stroke();
 
 		canvasRenderingContext.fillStyle = "#ffffff";

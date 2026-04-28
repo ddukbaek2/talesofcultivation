@@ -629,16 +629,13 @@ export class PlayerPart extends Object {
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	drawHeader(canvasRenderingContext, popupRect) {
-		// 우상단 메뉴 / 입력 아이콘이 차지하는 영역(약 140px) 은 헤더 바에서 비워둔다.
-		const headerRightInset = 140;
-		const headerBarWidth = popupRect.width - headerRightInset;
 		canvasRenderingContext.fillStyle = "#1a2240";
-		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, headerBarWidth, HEADER_HEIGHT);
+		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, HEADER_HEIGHT);
 		canvasRenderingContext.strokeStyle = "#d4b46a";
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.beginPath();
 		canvasRenderingContext.moveTo(popupRect.x, popupRect.y + HEADER_HEIGHT);
-		canvasRenderingContext.lineTo(popupRect.x + headerBarWidth, popupRect.y + HEADER_HEIGHT);
+		canvasRenderingContext.lineTo(popupRect.x + popupRect.width, popupRect.y + HEADER_HEIGHT);
 		canvasRenderingContext.stroke();
 
 		canvasRenderingContext.fillStyle = "#ffffff";
@@ -646,22 +643,7 @@ export class PlayerPart extends Object {
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "middle";
 		canvasRenderingContext.fillText("목록", popupRect.x + SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
-
-		const headerRightParts = [];
-		headerRightParts.push(`자금 ${this.#money}`);
-		if (this.#daysPassed > 0) {
-			headerRightParts.push(`${this.#daysPassed}일차`);
-		}
-		const headerRightText = headerRightParts.join("  ");
-		if (headerRightText.length > 0) {
-			canvasRenderingContext.fillStyle = "#ffcc88";
-			canvasRenderingContext.font = "16px GyeonggiBatang, sans-serif";
-			canvasRenderingContext.textAlign = "right";
-			canvasRenderingContext.textBaseline = "middle";
-			// 우상단 메뉴 / 입력모드 버튼 영역(약 120px) 을 피해 왼쪽으로 들여쓰기.
-			const headerRightInset = 120;
-			canvasRenderingContext.fillText(headerRightText, popupRect.x + popupRect.width - SIDE_MARGIN - headerRightInset, popupRect.y + HEADER_HEIGHT * 0.5);
-		}
+		// 우상단 자금/일자 표기는 상태 탭 안의 "정보" 섹션으로 이동 — 헤더 우측은 비워둠.
 	}
 
 	//==============================================================================
@@ -819,8 +801,8 @@ export class PlayerPart extends Object {
 	 * @param { number } height
 	 */
 	drawProfileTab(canvasRenderingContext, x, y, width, height) {
-		const innerX = x + 16;
-		const innerY = y + 16;
+		const innerX = x + 20;
+		const innerY = y + 20;
 
 		// 이름 + 경지 + 종파.
 		canvasRenderingContext.fillStyle = "#ffffff";
@@ -838,25 +820,25 @@ export class PlayerPart extends Object {
 		if (this.#sectName.length > 0) {
 			subtitleParts.push(this.#sectName);
 		}
-		canvasRenderingContext.fillText(subtitleParts.join("  ·  "), innerX, innerY + 30);
+		canvasRenderingContext.fillText(subtitleParts.join("  ·  "), innerX, innerY + 32);
 
-		// 자금 (별도 표기, 상단 우측).
-		canvasRenderingContext.fillStyle = "#d4b46a";
-		canvasRenderingContext.font = "bold 16px GyeonggiBatangBold, sans-serif";
-		canvasRenderingContext.textAlign = "right";
-		canvasRenderingContext.textBaseline = "top";
-		canvasRenderingContext.fillText(`자금 ${this.#money}`, x + width - 16, innerY + 4);
-
-		// 두 컬럼 분할 (기본 스탯 / 전투 능력).
-		const sectionTopY = innerY + 64;
-		const columnGap = 16;
-		const columnWidth = System.Math.floor((width - 32 - columnGap) * 0.5);
+		// 정보 섹션 (일자 / 자금) — 풀폭, 두 컬럼 좌우 분할.
+		const infoSectionTopY = innerY + 72;
+		const columnGap = 20;
+		const columnWidth = System.Math.floor((width - 40 - columnGap) * 0.5);
 		const baseColumnX = innerX;
 		const combatColumnX = innerX + columnWidth + columnGap;
+		this.drawStatSection(canvasRenderingContext, "정보", baseColumnX, infoSectionTopY, width - 40);
+		const infoRowTopY = infoSectionTopY + 28;
+		this.drawStatRow(canvasRenderingContext, "일자", `${this.#daysPassed}일차`, baseColumnX, infoRowTopY, columnWidth);
+		this.drawStatRow(canvasRenderingContext, "자금", this.#money.toString(), combatColumnX, infoRowTopY, columnWidth);
+
+		// 두 컬럼 분할 (기본 스탯 / 전투 능력).
+		const statSectionTopY = infoRowTopY + 36 + 12;
 
 		// 좌: 기본 스탯.
-		this.drawStatSection(canvasRenderingContext, "기본 스탯", baseColumnX, sectionTopY, columnWidth);
-		const baseRowTopY = sectionTopY + 28;
+		this.drawStatSection(canvasRenderingContext, "기본 스탯", baseColumnX, statSectionTopY, columnWidth);
+		const baseRowTopY = statSectionTopY + 28;
 		for (let baseStatIndex = 0; baseStatIndex < this.#baseStats.length; ++baseStatIndex) {
 			const baseStat = this.#baseStats[baseStatIndex];
 			const rowY = baseRowTopY + baseStatIndex * 28;
@@ -867,8 +849,8 @@ export class PlayerPart extends Object {
 		}
 
 		// 우: 전투 능력.
-		this.drawStatSection(canvasRenderingContext, "전투 능력", combatColumnX, sectionTopY, columnWidth);
-		const combatRowTopY = sectionTopY + 28;
+		this.drawStatSection(canvasRenderingContext, "전투 능력", combatColumnX, statSectionTopY, columnWidth);
+		const combatRowTopY = statSectionTopY + 28;
 		for (let combatStatIndex = 0; combatStatIndex < this.#combatStats.length; ++combatStatIndex) {
 			const combatStat = this.#combatStats[combatStatIndex];
 			const rowY = combatRowTopY + combatStatIndex * 28;
