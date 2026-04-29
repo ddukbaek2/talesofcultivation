@@ -5,6 +5,7 @@ const System = globalThis;
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
 import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 import { isActionPressed, getActiveInputMode, drawInputHintBadge, InputAction, InputMode } from "../base/inputhint.js";
+import { getHandFanAnglePerCardDegrees, getHandSpacingMultiplier } from "../base/usersettings.js";
 
 
 //==============================================================================
@@ -2186,12 +2187,25 @@ export class BattlePart extends Object {
 		const middleCardCenterY = popupBottomY - HAND_BOTTOM_MARGIN - PLAYER_CARD_HEIGHT * 0.5;
 		const fanCenterY = middleCardCenterY + FAN_ARC_RADIUS;
 		const middleIndex = (handCount - 1) * 0.5;
+		// 사용자 설정에서 각도 / 간격 배율 읽기 (기본은 5° / 1.0).
+		const userAnglePerCardDeg = getHandFanAnglePerCardDegrees();
+		const spacingMultiplier = getHandSpacingMultiplier();
 		// 손패 많아지면 카드당 각도 자동 축소.
-		const desiredPerCard = handCount > 1 ? System.Math.min(FAN_ANGLE_PER_CARD_DEG, FAN_MAX_TOTAL_SPREAD_DEG / (handCount - 1)) : 0;
+		const desiredPerCard = handCount > 1 ? System.Math.min(userAnglePerCardDeg, FAN_MAX_TOTAL_SPREAD_DEG / (handCount - 1)) : 0;
 		const angleDeg = (index - middleIndex) * desiredPerCard;
 		const angleRad = (angleDeg * System.Math.PI) / 180;
-		const centerX = popupCenterX + FAN_ARC_RADIUS * System.Math.sin(angleRad);
-		const centerY = fanCenterY - FAN_ARC_RADIUS * System.Math.cos(angleRad);
+		// 각도가 0 이면 평행한 카드 줄 → 가로 위치는 인덱스 × 카드 폭 × 배율 로 계산.
+		// 각도가 0 보다 크면 부채꼴 호의 X 위치에 spacingMultiplier 배율 적용.
+		let centerX;
+		let centerY;
+		if (userAnglePerCardDeg <= 0) {
+			centerX = popupCenterX + (index - middleIndex) * PLAYER_CARD_WIDTH * spacingMultiplier;
+			centerY = middleCardCenterY;
+		}
+		else {
+			centerX = popupCenterX + FAN_ARC_RADIUS * System.Math.sin(angleRad) * spacingMultiplier;
+			centerY = fanCenterY - FAN_ARC_RADIUS * System.Math.cos(angleRad);
+		}
 		return { centerX: centerX, centerY: centerY, rotation: angleRad };
 	}
 
@@ -2228,6 +2242,54 @@ export class BattlePart extends Object {
 			};
 			allLayouts.push(layoutEntry);
 			this.#playerHandLayouts.push(layoutEntry);
+		}
+
+		// 선택된 카드가 있으면 인접 카드(좌/우 각 1장) 가 선택 카드(확대된 상태) 와 안 겹치는
+		// 위치로 정확히 밀려나고, 그 너머의 카드들은 부채꼴 간격을 유지한 채 같이 따라 이동.
+		let selectedHandIndex = -1;
+		let selectedHandProgress = 0;
+		for (let layoutIndex = 0; layoutIndex < allLayouts.length; ++layoutIndex) {
+			if (allLayouts[layoutIndex].card.selectionProgress > selectedHandProgress) {
+				selectedHandProgress = allLayouts[layoutIndex].card.selectionProgress;
+				selectedHandIndex = layoutIndex;
+			}
+		}
+		if (selectedHandIndex >= 0 && selectedHandProgress > 0) {
+			const selectedCenterX = allLayouts[selectedHandIndex].centerX;
+			// 선택 카드는 최대 PICKED_CARD_SCALE 까지 커짐 → 그 절반 폭 + 인접 카드 절반 폭 + 여유.
+			const selectedCardHalfWidthAtFull = PLAYER_CARD_WIDTH * 0.5 * PICKED_CARD_SCALE;
+			const adjacentCardHalfWidth = PLAYER_CARD_WIDTH * 0.5;
+			const safetyGap = 8;
+			const safeDistance = selectedCardHalfWidthAtFull + adjacentCardHalfWidth + safetyGap;
+
+			// 좌측: 인접 카드(selectedHandIndex - 1) 를 -safeDistance 위치로, 그만큼의 시프트를 모든 좌측 카드에 적용.
+			const immediateLeftIndex = selectedHandIndex - 1;
+			let leftShiftAtFull = 0;
+			if (immediateLeftIndex >= 0) {
+				const naturalLeftDistance = selectedCenterX - allLayouts[immediateLeftIndex].centerX;
+				if (naturalLeftDistance < safeDistance) {
+					leftShiftAtFull = -(safeDistance - naturalLeftDistance);
+				}
+			}
+			// 우측 동일.
+			const immediateRightIndex = selectedHandIndex + 1;
+			let rightShiftAtFull = 0;
+			if (immediateRightIndex < allLayouts.length) {
+				const naturalRightDistance = allLayouts[immediateRightIndex].centerX - selectedCenterX;
+				if (naturalRightDistance < safeDistance) {
+					rightShiftAtFull = safeDistance - naturalRightDistance;
+				}
+			}
+
+			const leftShift = leftShiftAtFull * selectedHandProgress;
+			const rightShift = rightShiftAtFull * selectedHandProgress;
+
+			for (let layoutIndex = 0; layoutIndex < selectedHandIndex; ++layoutIndex) {
+				allLayouts[layoutIndex].centerX += leftShift;
+			}
+			for (let layoutIndex = selectedHandIndex + 1; layoutIndex < allLayouts.length; ++layoutIndex) {
+				allLayouts[layoutIndex].centerX += rightShift;
+			}
 		}
 
 		// 좌(인덱스 작음) → 우 (인덱스 큼) 순서로 그림. 선택 진행 중인 카드는 맨 위로.

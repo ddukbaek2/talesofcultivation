@@ -2,6 +2,7 @@
 // 포함 모듈 목록.
 //==============================================================================
 const System = globalThis;
+import { WorldNode } from "../../libs/vanilla.js/src/core/node/worldnode.js";
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
 import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 import { drawInputHintBadge, isActionPressed, InputAction } from "../base/inputhint.js";
@@ -12,13 +13,13 @@ import { drawInputHintBadge, isActionPressed, InputAction } from "../base/inputh
 //==============================================================================
 const SIDE_MARGIN = 32;
 const HEADER_HEIGHT = 64;
-const HEADER_TO_BAR_GAP = 16;
+const HEADER_TO_GRID_GAP = 16;
 const FOOTER_HEIGHT = 48;
-const MODE_BAR_HEIGHT = 48;
-const BAR_TO_GRID_GAP = 16;
 const SLOT_GAP = 16;
 const SLOT_INNER_PADDING = 18;
 const SAVE_SLOT_COUNT = 6;
+const CLOSE_BUTTON_SIZE = 36;
+const CLOSE_BUTTON_MARGIN = 12;
 
 
 //==============================================================================
@@ -90,47 +91,20 @@ class SaveSlotLayout extends Object {
 
 
 //==============================================================================
-// 모드 토글 버튼 hit-test 영역.
-//==============================================================================
-class ModeButtonLayout extends Object {
-	//==============================================================================
-	// 멤버 변수 목록.
-	//==============================================================================
-	/** @type { string } */ mode;
-	/** @type { number } */ x;
-	/** @type { number } */ y;
-	/** @type { number } */ width;
-	/** @type { number } */ height;
-
-	//==============================================================================
-	// 생성.
-	//==============================================================================
-	constructor(mode, x, y, width, height) {
-		super();
-		this.mode = mode;
-		this.x = x;
-		this.y = y;
-		this.width = width;
-		this.height = height;
-	}
-}
-
-
-//==============================================================================
-// 세이브 / 로드 파트 (콘솔 게임 풍).
-// - 상단에 모드 토글 (저장 / 불러오기).
+// 세이브 / 로드 파트 (콘솔 게임 풍). 비게임 UI 이므로 WorldNode 기반.
+// - 모드는 외부에서 setMode 로 지정 (저장 / 불러오기). UI 상에서 모드 전환 불가.
 // - 슬롯 6개를 2열 × 3행으로 표시. 각 슬롯에 캐릭터 / 경지 / 일자 / 저장 시각.
-// - 슬롯 클릭 시 외부 onSlotSelected(slot, mode) 콜백으로 위임.
-// - 저장 데이터는 임시 — installSampleSlots 가 6개 슬롯 (일부는 채움 / 일부는 빈) 으로 미리 채움.
+// - 우상단 X 버튼으로 닫기. cancel 액션도 닫기 (onClose 콜백).
+// - 메뉴 위에 별도 레이어로 떠 있는 형태 (메뉴는 닫지 않고 그 위에 표시).
 //==============================================================================
-export class SavePart extends Object {
+export class SavePart extends WorldNode {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
 	/** @private @type { SaveSlot[] } */ #slots;
 	/** @private @type { string } */ #mode;
 	/** @private @type { SaveSlotLayout[] } */ #slotLayouts;
-	/** @private @type { ModeButtonLayout[] } */ #modeButtonLayouts;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #closeButtonRect;
 	/** @private @type { boolean } */ #wasTouchPressed;
 	/** @private @type { boolean } */ #wasCancelActionPressed;
 	/** @private @type { ((SaveSlot, string) => void) | null } */ #onSlotSelected;
@@ -145,7 +119,7 @@ export class SavePart extends Object {
 		this.#slots = [];
 		this.#mode = SavePartMode.save;
 		this.#slotLayouts = [];
-		this.#modeButtonLayouts = [];
+		this.#closeButtonRect = null;
 		this.#wasTouchPressed = false;
 		this.#wasCancelActionPressed = false;
 		this.#onSlotSelected = null;
@@ -225,17 +199,16 @@ export class SavePart extends Object {
 	 * @param { { x: number, y: number } } viewInputPosition
 	 */
 	handleClick(viewInputPosition) {
-		for (const buttonLayout of this.#modeButtonLayouts) {
-			if (this.isInsideRect(viewInputPosition, buttonLayout.x, buttonLayout.y, buttonLayout.width, buttonLayout.height)) {
-				if (this.#mode !== buttonLayout.mode) {
-					this.#mode = buttonLayout.mode;
-					const tabAudioBeepPlayer = this.getAudioBeepPlayer();
-					if (tabAudioBeepPlayer) {
-						tabAudioBeepPlayer.playClick();
-					}
-				}
-				return;
+		// X 닫기 버튼.
+		if (this.#closeButtonRect && this.isInsideRect(viewInputPosition, this.#closeButtonRect.x, this.#closeButtonRect.y, this.#closeButtonRect.width, this.#closeButtonRect.height)) {
+			const closeAudioBeepPlayer = this.getAudioBeepPlayer();
+			if (closeAudioBeepPlayer) {
+				closeAudioBeepPlayer.playClick();
 			}
+			if (this.#onClose) {
+				this.#onClose();
+			}
+			return;
 		}
 		for (const slotLayout of this.#slotLayouts) {
 			if (this.isInsideRect(viewInputPosition, slotLayout.x, slotLayout.y, slotLayout.width, slotLayout.height)) {
@@ -270,12 +243,11 @@ export class SavePart extends Object {
 		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
 
 		this.drawHeader(canvasRenderingContext, popupRect);
-		this.drawModeBar(canvasRenderingContext, popupRect);
 
 		// 슬롯 그리드 (2열 × 3행).
 		this.#slotLayouts = [];
 		const gridX = popupRect.x + SIDE_MARGIN;
-		const gridY = popupRect.y + HEADER_HEIGHT + HEADER_TO_BAR_GAP + MODE_BAR_HEIGHT + BAR_TO_GRID_GAP;
+		const gridY = popupRect.y + HEADER_HEIGHT + HEADER_TO_GRID_GAP;
 		const gridWidth = popupRect.width - SIDE_MARGIN * 2;
 		const gridHeight = popupRect.height - (gridY - popupRect.y) - FOOTER_HEIGHT - 16;
 		const columnCount = 2;
@@ -319,39 +291,27 @@ export class SavePart extends Object {
 		canvasRenderingContext.font = "bold 22px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText("저장 / 불러오기", popupRect.x + SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
-	}
+		const headerTitleText = this.#mode === SavePartMode.save ? "저장" : "불러오기";
+		canvasRenderingContext.fillText(headerTitleText, popupRect.x + SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
 
-	//==============================================================================
-	// 모드 토글 바 (저장 / 불러오기).
-	//==============================================================================
-	/**
-	 * @param { CanvasRenderingContext2D } canvasRenderingContext
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
-	 */
-	drawModeBar(canvasRenderingContext, popupRect) {
-		this.#modeButtonLayouts = [];
-		const barY = popupRect.y + HEADER_HEIGHT + HEADER_TO_BAR_GAP;
-		const buttonModes = [SavePartMode.save, SavePartMode.load];
-		const buttonGap = 8;
-		const buttonAreaWidth = popupRect.width - SIDE_MARGIN * 2;
-		const buttonWidth = (buttonAreaWidth - buttonGap) * 0.5;
-		for (let modeIndex = 0; modeIndex < buttonModes.length; ++modeIndex) {
-			const buttonMode = buttonModes[modeIndex];
-			const buttonX = popupRect.x + SIDE_MARGIN + modeIndex * (buttonWidth + buttonGap);
-			const isActive = buttonMode === this.#mode;
-			canvasRenderingContext.fillStyle = isActive ? "#2c3a66" : "#16203a";
-			canvasRenderingContext.fillRect(buttonX, barY, buttonWidth, MODE_BAR_HEIGHT);
-			canvasRenderingContext.strokeStyle = isActive ? "#d4b46a" : "#3a4a6a";
-			canvasRenderingContext.lineWidth = isActive ? 2 : 1;
-			canvasRenderingContext.strokeRect(buttonX, barY, buttonWidth, MODE_BAR_HEIGHT);
-			canvasRenderingContext.fillStyle = isActive ? "#ffffff" : "#aaaabb";
-			canvasRenderingContext.font = "bold 16px GyeonggiBatangBold, sans-serif";
-			canvasRenderingContext.textAlign = "center";
-			canvasRenderingContext.textBaseline = "middle";
-			canvasRenderingContext.fillText(buttonMode === SavePartMode.save ? "저장" : "불러오기", buttonX + buttonWidth * 0.5, barY + MODE_BAR_HEIGHT * 0.5);
-			this.#modeButtonLayouts.push(new ModeButtonLayout(buttonMode, buttonX, barY, buttonWidth, MODE_BAR_HEIGHT));
-		}
+		// 우상단 X 닫기 버튼.
+		const closeButtonX = popupRect.x + popupRect.width - CLOSE_BUTTON_SIZE - CLOSE_BUTTON_MARGIN;
+		const closeButtonY = popupRect.y + (HEADER_HEIGHT - CLOSE_BUTTON_SIZE) * 0.5;
+		this.#closeButtonRect = { x: closeButtonX, y: closeButtonY, width: CLOSE_BUTTON_SIZE, height: CLOSE_BUTTON_SIZE };
+		canvasRenderingContext.fillStyle = "#1a2240";
+		canvasRenderingContext.fillRect(closeButtonX, closeButtonY, CLOSE_BUTTON_SIZE, CLOSE_BUTTON_SIZE);
+		canvasRenderingContext.strokeStyle = "#d4b46a";
+		canvasRenderingContext.lineWidth = 2;
+		canvasRenderingContext.strokeRect(closeButtonX, closeButtonY, CLOSE_BUTTON_SIZE, CLOSE_BUTTON_SIZE);
+		canvasRenderingContext.strokeStyle = "#ffffff";
+		canvasRenderingContext.lineWidth = 2;
+		const crossPaddingValue = 10;
+		canvasRenderingContext.beginPath();
+		canvasRenderingContext.moveTo(closeButtonX + crossPaddingValue, closeButtonY + crossPaddingValue);
+		canvasRenderingContext.lineTo(closeButtonX + CLOSE_BUTTON_SIZE - crossPaddingValue, closeButtonY + CLOSE_BUTTON_SIZE - crossPaddingValue);
+		canvasRenderingContext.moveTo(closeButtonX + CLOSE_BUTTON_SIZE - crossPaddingValue, closeButtonY + crossPaddingValue);
+		canvasRenderingContext.lineTo(closeButtonX + crossPaddingValue, closeButtonY + CLOSE_BUTTON_SIZE - crossPaddingValue);
+		canvasRenderingContext.stroke();
 	}
 
 	//==============================================================================

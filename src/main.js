@@ -19,7 +19,7 @@ import { MergeGame } from "./minigame/mergegame.js";
 import { BattlePart } from "./part/battlepart.js";
 import { DialoguePart } from "./part/dialoguepart.js";
 import { MapPart } from "./part/mappart.js";
-import { PlayerPart } from "./part/playerpart.js";
+import { MenuPart } from "./part/menupart.js";
 import { DungeonPart } from "./part/dungeonpart.js";
 import { TitlePart } from "./part/titlepart.js";
 import { SavePart } from "./part/savepart.js";
@@ -27,6 +27,7 @@ import { StoryBranchPart } from "./part/storybranchpart.js";
 import { GameOverPart } from "./part/gameoverpart.js";
 import { AudioBeepPlayer } from "./base/audiobeepplayer.js";
 import { setActiveInputMode, drawInputHintBadge, isActionPressed, InputAction } from "./base/inputhint.js";
+import { loadUserSettings } from "./base/usersettings.js";
 
 
 //==============================================================================
@@ -39,7 +40,6 @@ const PartKey = System.Object.freeze({
 	merge: "merge",
 	map: "map",
 	dungeon: "dungeon",
-	save: "save",
 	storyBranch: "storyBranch",
 	gameOver: "gameOver",
 });
@@ -91,7 +91,7 @@ export class TalesOfCultivation extends Scene {
 	/** @private @type { BattlePart } */ #battlePart;
 	/** @private @type { DialoguePart } */ #dialoguePart;
 	/** @private @type { MapPart } */ #mapPart;
-	/** @private @type { PlayerPart } */ #playerPart;
+	/** @private @type { MenuPart } */ #menuPart;
 	/** @private @type { DungeonPart } */ #dungeonPart;
 	/** @private @type { TitlePart } */ #titlePart;
 	/** @private @type { SavePart } */ #savePart;
@@ -108,7 +108,8 @@ export class TalesOfCultivation extends Scene {
 	/** @private @type { boolean } */ #prevIsKey4;
 	/** @private @type { boolean } */ #prevIsKey5;
 	/** @private @type { boolean } */ #prevIsKeyP;
-	/** @private @type { boolean } */ #isPlayerOverlayVisible;
+	/** @private @type { boolean } */ #isMenuOverlayVisible;
+	/** @private @type { boolean } */ #isSaveOverlayVisible;
 	/** @private @type { boolean } */ #prevIsTouchPressed;
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #menuButtonRect;
 	/** @private @type { boolean } */ #isTouchDevice;
@@ -128,6 +129,8 @@ export class TalesOfCultivation extends Scene {
 	 */
 	create() {
 		super.create();
+		// 사용자 설정 (localStorage) 을 가장 먼저 불러온다 — 이후 MenuPart 생성 시 즉시 반영되도록.
+		loadUserSettings();
 		this.#devtools = null;
 		this.#loadedImageAssets = new System.Map();
 		this.#loadedAudioAssets = new System.Map();
@@ -149,7 +152,7 @@ export class TalesOfCultivation extends Scene {
 		this.#battlePart = new BattlePart();
 		this.#dialoguePart = new DialoguePart();
 		this.#mapPart = new MapPart();
-		this.#playerPart = new PlayerPart();
+		this.#menuPart = new MenuPart();
 		this.#dungeonPart = new DungeonPart();
 		this.#titlePart = new TitlePart();
 		this.#savePart = new SavePart();
@@ -166,7 +169,8 @@ export class TalesOfCultivation extends Scene {
 		this.#prevIsKey4 = false;
 		this.#prevIsKey5 = false;
 		this.#prevIsKeyP = false;
-		this.#isPlayerOverlayVisible = false;
+		this.#isMenuOverlayVisible = false;
+		this.#isSaveOverlayVisible = false;
 		this.#prevIsTouchPressed = false;
 		this.#menuButtonRect = null;
 		// 터치 가능 장치 여부 (한 번만 감지). 게임패드는 매 프레임 폴링.
@@ -273,7 +277,7 @@ export class TalesOfCultivation extends Scene {
 		this.#battlePart.setAudioBeepPlayer(this.#audioBeepPlayer);
 		this.#mergeGame.setAudioBeepPlayer(this.#audioBeepPlayer);
 		this.#mapPart.setAudioBeepPlayer(this.#audioBeepPlayer);
-		this.#playerPart.setAudioBeepPlayer(this.#audioBeepPlayer);
+		this.#menuPart.setAudioBeepPlayer(this.#audioBeepPlayer);
 		this.#dungeonPart.setAudioBeepPlayer(this.#audioBeepPlayer);
 		this.#titlePart.setAudioBeepPlayer(this.#audioBeepPlayer);
 		this.#savePart.setAudioBeepPlayer(this.#audioBeepPlayer);
@@ -296,10 +300,14 @@ export class TalesOfCultivation extends Scene {
 		});
 
 		// SavePart 슬롯 선택 — 임시 (실제 저장/로드 로직은 PlayerProfile 시스템 도입 후 연결).
-		// 슬롯 처리 후엔 SavePart 의 onClose 와 동일 경로로 복귀.
+		// 슬롯 처리 후엔 SavePart 오버레이 닫기.
 		this.#savePart.setOnSlotSelected((slot, mode) => {
-			// 슬롯 처리 후 자동 닫기 (현재 등록된 onClose 콜백 사용).
-			// 별도 로직 없음 — 추후 PlayerProfile 직렬화/역직렬화 시점에서 채움.
+			this.#isSaveOverlayVisible = false;
+		});
+
+		// SavePart 닫기 (X 버튼 / 취소 액션) → SavePart 오버레이만 닫음 (메뉴는 그대로).
+		this.#savePart.setOnClose(() => {
+			this.#isSaveOverlayVisible = false;
 		});
 
 		// StoryBranchPart 의 닫기 (X 버튼 / 취소 액션) → 진입 시점 파트로 복귀.
@@ -310,10 +318,8 @@ export class TalesOfCultivation extends Scene {
 		// GameOverPart 메뉴.
 		this.#gameOverPart.setOnSaveLoadSelected(() => {
 			this.#savePart.setMode("load");
-			this.#savePart.setOnClose(() => {
-				this.setActivePartKey(PartKey.gameOver);
-			});
-			this.setActivePartKey(PartKey.save);
+			this.#savePart.reset();
+			this.#isSaveOverlayVisible = true;
 		});
 		this.#gameOverPart.setOnTitleSelected(() => {
 			this.setActivePartKey(PartKey.title);
@@ -326,18 +332,17 @@ export class TalesOfCultivation extends Scene {
 			this.setActivePartKey(PartKey.dialogue);
 		});
 
-		// PlayerPart 설정 탭 액션 — 저장 / 불러오기 / 처음으로 라우팅.
-		this.#playerPart.setOnSettingActionInvoked((settingKey) => {
-			const returnPartKey = this.#activePartKey;
-			this.#isPlayerOverlayVisible = false;
+		// MenuPart 설정 탭 액션 — 저장 / 불러오기 / 처음으로 라우팅.
+		// 저장 / 불러오기는 메뉴를 닫지 않고 메뉴 위에 별개 레이어로 SavePart 오버레이를 띄움.
+		this.#menuPart.setOnSettingActionInvoked((settingKey) => {
 			if (settingKey === "save" || settingKey === "load") {
 				this.#savePart.setMode(settingKey === "save" ? "save" : "load");
-				this.#savePart.setOnClose(() => {
-					this.setActivePartKey(returnPartKey);
-				});
-				this.setActivePartKey(PartKey.save);
+				this.#savePart.reset();
+				this.#isSaveOverlayVisible = true;
 			}
 			else if (settingKey === "restart") {
+				this.#isMenuOverlayVisible = false;
+				this.#isSaveOverlayVisible = false;
 				this.setActivePartKey(PartKey.title);
 			}
 		});
@@ -394,9 +399,15 @@ export class TalesOfCultivation extends Scene {
 			this.setActivePartKey(PartKey.dungeon);
 		}
 		if (isMenuActionActive && !this.#prevIsKeyP) {
-			this.#isPlayerOverlayVisible = !this.#isPlayerOverlayVisible;
-			if (this.#isPlayerOverlayVisible) {
-				this.#playerPart.reset();
+			// 세이브 오버레이가 떠 있으면 메뉴 액션은 세이브 오버레이만 닫음.
+			if (this.#isSaveOverlayVisible) {
+				this.#isSaveOverlayVisible = false;
+			}
+			else {
+				this.#isMenuOverlayVisible = !this.#isMenuOverlayVisible;
+				if (this.#isMenuOverlayVisible) {
+					this.#menuPart.reset();
+				}
 			}
 		}
 		// T 키로 분기점 뷰 토글 — 전투 / 맵 / 대사 등 일반 파트에서만 동작.
@@ -428,12 +439,15 @@ export class TalesOfCultivation extends Scene {
 			if (isTouchPressed && !this.#prevIsTouchPressed) {
 				const viewInputPosition = inputManager.getViewInputPosition();
 				if (this.#menuButtonRect && this.isInsideRect(viewInputPosition, this.#menuButtonRect)) {
-					this.#isPlayerOverlayVisible = !this.#isPlayerOverlayVisible;
-					if (this.#isPlayerOverlayVisible) {
-						this.#playerPart.reset();
-					}
-					if (this.#audioBeepPlayer) {
-						this.#audioBeepPlayer.playClick();
+					// 세이브 오버레이가 떠 있으면 메뉴 버튼 클릭으로는 동작하지 않음 (세이브가 우선 닫혀야 함).
+					if (!this.#isSaveOverlayVisible) {
+						this.#isMenuOverlayVisible = !this.#isMenuOverlayVisible;
+						if (this.#isMenuOverlayVisible) {
+							this.#menuPart.reset();
+						}
+						if (this.#audioBeepPlayer) {
+							this.#audioBeepPlayer.playClick();
+						}
 					}
 					consumedByMenuButton = true;
 				}
@@ -446,8 +460,12 @@ export class TalesOfCultivation extends Scene {
 			const viewManager = engine.getViewManager();
 			const viewSize = viewManager.getViewSize();
 			const popupRect = this.computeMinigamePopupRect(viewSize);
-			if (this.#isPlayerOverlayVisible) {
-				this.#playerPart.tick(timeDelta, inputManager, popupRect);
+			// 입력 우선순위: 세이브 오버레이 > 메뉴 오버레이 > 활성 파트.
+			if (this.#isSaveOverlayVisible) {
+				this.#savePart.tick(timeDelta, inputManager, popupRect);
+			}
+			else if (this.#isMenuOverlayVisible) {
+				this.#menuPart.tick(timeDelta, inputManager, popupRect);
 			}
 			else if (this.#activePartKey === PartKey.title) {
 				this.#titlePart.tick(timeDelta, inputManager, popupRect);
@@ -477,9 +495,6 @@ export class TalesOfCultivation extends Scene {
 			else if (this.#activePartKey === PartKey.dungeon) {
 				this.#dungeonPart.tick(timeDelta, inputManager, popupRect);
 			}
-			else if (this.#activePartKey === PartKey.save) {
-				this.#savePart.tick(timeDelta, inputManager, popupRect);
-			}
 			else if (this.#activePartKey === PartKey.storyBranch) {
 				this.#storyBranchPart.tick(timeDelta, inputManager, popupRect);
 			}
@@ -502,7 +517,8 @@ export class TalesOfCultivation extends Scene {
 		if (this.#activePartKey === PartKey.gameOver) {
 			return false;
 		}
-		if (this.#activePartKey === PartKey.save) {
+		// 세이브 오버레이가 떠 있는 동안에는 분기점 토글 비허용.
+		if (this.#isSaveOverlayVisible) {
 			return false;
 		}
 		return true;
@@ -580,9 +596,6 @@ export class TalesOfCultivation extends Scene {
 		else if (this.#activePartKey === PartKey.dungeon) {
 			this.#dungeonPart.draw(graphic, popupRect);
 		}
-		else if (this.#activePartKey === PartKey.save) {
-			this.#savePart.draw(graphic, popupRect);
-		}
 		else if (this.#activePartKey === PartKey.storyBranch) {
 			this.#storyBranchPart.draw(graphic, popupRect);
 		}
@@ -590,11 +603,18 @@ export class TalesOfCultivation extends Scene {
 			this.#gameOverPart.draw(graphic, popupRect);
 		}
 
-		// 플레이어 정보창 오버레이 (기저 파트 위에 어두운 백드롭 + PlayerPart 출력).
-		if (this.#isPlayerOverlayVisible) {
+		// 메뉴 오버레이 (기저 파트 위에 어두운 백드롭 + MenuPart 출력).
+		if (this.#isMenuOverlayVisible) {
 			canvasRenderingContext.fillStyle = "rgba(0, 0, 0, 0.55)";
 			canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
-			this.#playerPart.draw(graphic, popupRect);
+			this.#menuPart.draw(graphic, popupRect);
+		}
+
+		// 세이브 / 로드 오버레이 (메뉴 위에 또 다른 백드롭 + SavePart 출력).
+		if (this.#isSaveOverlayVisible) {
+			canvasRenderingContext.fillStyle = "rgba(0, 0, 0, 0.55)";
+			canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
+			this.#savePart.draw(graphic, popupRect);
 		}
 
 		// 메뉴 바 (오버레이보다도 위에 그려서 항상 클릭 가능).
@@ -603,7 +623,7 @@ export class TalesOfCultivation extends Scene {
 
 	//==============================================================================
 	// 우상단 메뉴 바 출력 + hit 영역 갱신.
-	// - 우측: 메뉴 버튼 (PlayerPart 오버레이 토글, P 키와 동일).
+	// - 우측: 메뉴 버튼 (MenuPart 오버레이 토글, ESC 키와 동일).
 	// - 좌측: 입력 모드 표시 (게임패드 / 키보드 / 터치). 표시 전용, 클릭 동작 없음.
 	//==============================================================================
 	/**
@@ -625,7 +645,7 @@ export class TalesOfCultivation extends Scene {
 		this.drawInputModeIcon(canvasRenderingContext, inputMode, inputModeX, inputModeY, buttonSize);
 
 		// 메뉴 버튼 (우).
-		const isOpen = this.#isPlayerOverlayVisible;
+		const isOpen = this.#isMenuOverlayVisible;
 		canvasRenderingContext.fillStyle = isOpen ? "#3a2a55" : "#1a2240";
 		canvasRenderingContext.fillRect(menuButtonX, menuButtonY, buttonSize, buttonSize);
 		canvasRenderingContext.strokeStyle = "#d4b46a";
@@ -830,9 +850,6 @@ export class TalesOfCultivation extends Scene {
 		}
 		else if (partKey === PartKey.dungeon) {
 			this.#dungeonPart.reset();
-		}
-		else if (partKey === PartKey.save) {
-			this.#savePart.reset();
 		}
 		else if (partKey === PartKey.storyBranch) {
 			this.#storyBranchPart.reset();

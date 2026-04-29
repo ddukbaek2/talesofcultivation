@@ -18,6 +18,11 @@ const SCENE_NODE_WIDTH = 160;
 const SCENE_NODE_HEIGHT = 120;
 const SCENE_PORTRAIT_RADIUS = 26;
 const DETAIL_INNER_PADDING = 20;
+const SCENE_CELL_SPACING_X = 240;
+const SCENE_CELL_SPACING_Y = 180;
+const SCENE_CELL_PADDING = 32;
+const SCROLL_BAR_WIDTH = 8;
+const SCROLL_KEYBOARD_SPEED = 320;
 
 
 //==============================================================================
@@ -115,6 +120,12 @@ export class StoryBranchPart extends Object {
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #visitButtonRect;
 	/** @private @type { (() => void) | null } */ #onClose;
 	/** @private @type { ((StoryScene) => void) | null } */ #onSceneVisited;
+	/** @private @type { number } */ #scrollY;
+	/** @private @type { number } */ #lastScrollMaxY;
+	/** @private @type { number } */ #lastGraphAreaHeight;
+	/** @private @type { number } */ #lastGraphContentHeight;
+	/** @private @type { { x: number, y: number } | null } */ #dragLastPosition;
+	/** @private @type { number } */ #pendingWheelDeltaY;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
 
 	//==============================================================================
@@ -132,8 +143,21 @@ export class StoryBranchPart extends Object {
 		this.#visitButtonRect = null;
 		this.#onClose = null;
 		this.#onSceneVisited = null;
+		this.#scrollY = 0;
+		this.#lastScrollMaxY = 0;
+		this.#lastGraphAreaHeight = 0;
+		this.#lastGraphContentHeight = 0;
+		this.#dragLastPosition = null;
+		this.#pendingWheelDeltaY = 0;
 		this.#audioBeepPlayer = null;
 		this.installSampleScenes();
+		// 마우스 휠 입력은 InputManager 가 다루지 않으므로 직접 이벤트를 받아 누적한다.
+		// 누적된 양은 다음 tick 에서 scrollY 에 반영.
+		if (typeof window !== "undefined") {
+			window.addEventListener("wheel", (wheelEvent) => {
+				this.#pendingWheelDeltaY += wheelEvent.deltaY;
+			}, { passive: true });
+		}
 	}
 
 	//==============================================================================
@@ -179,11 +203,47 @@ export class StoryBranchPart extends Object {
 	 */
 	tick(timeDelta, inputManager, popupRect) {
 		const isPressed = inputManager.isTouchPressed();
+		const isMoving = inputManager.isTouchMoved();
+		const viewInputPosition = inputManager.getViewInputPosition();
+
+		// 누르는 동안 위치 추적 (드래그 스크롤).
+		// 주의: isTouchPressed 는 mousedown 한 프레임만 true. 드래그 유지 판정은 isTouchMoved 로 한다.
 		if (isPressed && !this.#wasTouchPressed) {
-			const viewInputPosition = inputManager.getViewInputPosition();
 			this.handleClick(viewInputPosition);
+			this.#dragLastPosition = { x: viewInputPosition.x, y: viewInputPosition.y };
+		}
+		else if (isMoving && this.#dragLastPosition !== null) {
+			const dragDeltaY = viewInputPosition.y - this.#dragLastPosition.y;
+			this.#scrollY -= dragDeltaY;
+			this.#dragLastPosition = { x: viewInputPosition.x, y: viewInputPosition.y };
+		}
+		else if (!isMoving) {
+			this.#dragLastPosition = null;
 		}
 		this.#wasTouchPressed = isPressed;
+
+		// 마우스 휠 누적분을 적용.
+		if (this.#pendingWheelDeltaY !== 0) {
+			this.#scrollY += this.#pendingWheelDeltaY;
+			this.#pendingWheelDeltaY = 0;
+		}
+
+		// 키보드 ↑↓ 로 스크롤.
+		if (inputManager.isKeyPressed("ArrowUp")) {
+			this.#scrollY -= SCROLL_KEYBOARD_SPEED * timeDelta;
+		}
+		if (inputManager.isKeyPressed("ArrowDown")) {
+			this.#scrollY += SCROLL_KEYBOARD_SPEED * timeDelta;
+		}
+
+		// 스크롤 범위 클램프.
+		if (this.#scrollY < 0) {
+			this.#scrollY = 0;
+		}
+		if (this.#scrollY > this.#lastScrollMaxY) {
+			this.#scrollY = this.#lastScrollMaxY;
+		}
+
 		const isCancelActive = isActionPressed(inputManager, InputAction.cancel);
 		if (isCancelActive && !this.#wasCancelActionPressed && this.#onClose) {
 			this.#onClose();
@@ -359,7 +419,7 @@ export class StoryBranchPart extends Object {
 		canvasRenderingContext.rect(x + 1, y + 1, width - 2, height - 2);
 		canvasRenderingContext.clip();
 
-		// 격자 셀 사이즈 계산. 가장 큰 row / column 으로 확보.
+		// 격자: 고정 셀 크기 사용. 컨텐츠가 영역보다 크면 세로 스크롤 가능.
 		let maxRow = 0;
 		let maxColumn = 0;
 		for (const scene of this.#scenes) {
@@ -372,20 +432,22 @@ export class StoryBranchPart extends Object {
 		}
 		const totalRows = maxRow + 1;
 		const totalColumns = maxColumn + 1;
-		const cellPaddingX = 24;
-		const cellPaddingY = 20;
-		const availableWidth = width - cellPaddingX * 2;
-		const availableHeight = height - cellPaddingY * 2;
-		const cellSpacingX = totalColumns > 1 ? availableWidth / (totalColumns - 1) : 0;
-		const cellSpacingY = totalRows > 1 ? availableHeight / (totalRows - 1) : 0;
-		const baseGridX = x + cellPaddingX;
-		const baseGridY = y + cellPaddingY;
+		const totalContentWidth = (totalColumns - 1) * SCENE_CELL_SPACING_X + SCENE_NODE_WIDTH + SCENE_CELL_PADDING * 2;
+		const totalContentHeight = (totalRows - 1) * SCENE_CELL_SPACING_Y + SCENE_NODE_HEIGHT + SCENE_CELL_PADDING * 2;
+		this.#lastGraphAreaHeight = height;
+		this.#lastGraphContentHeight = totalContentHeight;
+		this.#lastScrollMaxY = System.Math.max(0, totalContentHeight - height);
+		// 컨텐츠가 영역보다 작으면 가운데 정렬, 크면 좌상단 정렬 + 스크롤.
+		const offsetX = totalContentWidth < width ? (width - totalContentWidth) * 0.5 : 0;
+		const offsetY = totalContentHeight < height ? (height - totalContentHeight) * 0.5 : -this.#scrollY;
+		const baseGridX = x + SCENE_CELL_PADDING + offsetX;
+		const baseGridY = y + SCENE_CELL_PADDING + offsetY;
 
 		// 노드 위치 사전 계산 (연결선과 노드 출력에서 공유).
 		const nodeCenterById = new System.Map();
 		for (const scene of this.#scenes) {
-			const nodeCenterX = baseGridX + (totalColumns > 1 ? cellSpacingX * scene.column : availableWidth * 0.5);
-			const nodeCenterY = baseGridY + (totalRows > 1 ? cellSpacingY * scene.row : availableHeight * 0.5);
+			const nodeCenterX = baseGridX + scene.column * SCENE_CELL_SPACING_X + SCENE_NODE_WIDTH * 0.5;
+			const nodeCenterY = baseGridY + scene.row * SCENE_CELL_SPACING_Y + SCENE_NODE_HEIGHT * 0.5;
 			nodeCenterById.set(scene.id, { x: nodeCenterX, y: nodeCenterY });
 		}
 
@@ -423,6 +485,22 @@ export class StoryBranchPart extends Object {
 		}
 
 		canvasRenderingContext.restore();
+
+		// 스크롤바 (오버플로우 시 우측 가장자리에 골드 바).
+		if (this.#lastScrollMaxY > 0) {
+			const scrollTrackX = x + width - SCROLL_BAR_WIDTH - 4;
+			const scrollTrackY = y + 4;
+			const scrollTrackHeight = height - 8;
+			canvasRenderingContext.fillStyle = "#1a1a2e";
+			canvasRenderingContext.fillRect(scrollTrackX, scrollTrackY, SCROLL_BAR_WIDTH, scrollTrackHeight);
+			canvasRenderingContext.strokeStyle = "#3a3a5a";
+			canvasRenderingContext.lineWidth = 1;
+			canvasRenderingContext.strokeRect(scrollTrackX, scrollTrackY, SCROLL_BAR_WIDTH, scrollTrackHeight);
+			const thumbHeight = System.Math.max(28, scrollTrackHeight * (this.#lastGraphAreaHeight / this.#lastGraphContentHeight));
+			const thumbY = scrollTrackY + (this.#scrollY / this.#lastScrollMaxY) * (scrollTrackHeight - thumbHeight);
+			canvasRenderingContext.fillStyle = "#d4b46a";
+			canvasRenderingContext.fillRect(scrollTrackX, thumbY, SCROLL_BAR_WIDTH, thumbHeight);
+		}
 	}
 
 	//==============================================================================

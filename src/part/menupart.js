@@ -2,8 +2,19 @@
 // 포함 모듈 목록.
 //==============================================================================
 const System = globalThis;
+import { WorldNode } from "../../libs/vanilla.js/src/core/node/worldnode.js";
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
 import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
+import {
+	getUserSettings,
+	setBeepEnabled,
+	setFloatingTextEnabled,
+	setAutoEndTurnEnabled,
+	setHandFanAngleLevel,
+	setHandOverlapLevel,
+	SettingLevel,
+	levelLabel,
+} from "../base/usersettings.js";
 
 
 //==============================================================================
@@ -19,12 +30,14 @@ const FOOTER_HEIGHT = 44;
 const CONTENT_INNER_PADDING = 20;
 const LIST_ROW_HEIGHT = 64;
 const LIST_ROW_GAP = 8;
+const SCROLL_KEYBOARD_SPEED = 360;
+const SCROLL_BAR_WIDTH = 6;
 
 
 //==============================================================================
 // 탭 식별자.
 //==============================================================================
-const PlayerPartTabKey = System.Object.freeze({
+const MenuPartTabKey = System.Object.freeze({
 	profile: "profile",
 	realm: "realm",
 	inventory: "inventory",
@@ -280,7 +293,10 @@ class RealmInfo extends Object {
 
 
 //==============================================================================
-// 설정 항목 (토글 / 액션 공통). isToggle=true 면 isOn 으로 ON/OFF 표시.
+// 설정 항목 (토글 / 사이클 / 액션 공통).
+// - isToggle = true: ON/OFF 토글. valueLabel = "켬"/"끔".
+// - cycleOptions 가 비어있지 않으면 사이클 항목. 클릭 시 cycleIndex 가 +1 됨. valueLabel 자동 갱신.
+// - 둘 다 false / 빈 배열이면 액션 항목 (실행 콜백 호출만).
 //==============================================================================
 class SettingEntry extends Object {
 	//==============================================================================
@@ -292,11 +308,13 @@ class SettingEntry extends Object {
 	/** @type { boolean } */ isToggle;
 	/** @type { boolean } */ isOn;
 	/** @type { string } */ valueLabel;
+	/** @type { string[] } */ cycleOptions;
+	/** @type { number } */ cycleIndex;
 
 	//==============================================================================
 	// 생성.
 	//==============================================================================
-	constructor(key, name, description, isToggle, isOn, valueLabel) {
+	constructor(key, name, description, isToggle, isOn, valueLabel, cycleOptions, cycleIndex) {
 		super();
 		this.key = key;
 		this.name = name;
@@ -304,12 +322,16 @@ class SettingEntry extends Object {
 		this.isToggle = isToggle;
 		this.isOn = isOn;
 		this.valueLabel = valueLabel;
+		this.cycleOptions = System.Array.isArray(cycleOptions) ? cycleOptions : [];
+		this.cycleIndex = typeof cycleIndex === "number" ? cycleIndex : 0;
 	}
 }
 
 
 //==============================================================================
 // 설정 항목 행 hit-test 영역.
+// - x/y/width/height: 행 전체 영역 (드래그 스크롤 가능 영역).
+// - controlX/controlY/controlWidth/controlHeight: 우측 명시적 컨트롤 버튼 영역 (클릭만 트리거).
 //==============================================================================
 class SettingRowLayout extends Object {
 	//==============================================================================
@@ -320,17 +342,25 @@ class SettingRowLayout extends Object {
 	/** @type { number } */ y;
 	/** @type { number } */ width;
 	/** @type { number } */ height;
+	/** @type { number } */ controlX;
+	/** @type { number } */ controlY;
+	/** @type { number } */ controlWidth;
+	/** @type { number } */ controlHeight;
 
 	//==============================================================================
 	// 생성.
 	//==============================================================================
-	constructor(setting, x, y, width, height) {
+	constructor(setting, x, y, width, height, controlX, controlY, controlWidth, controlHeight) {
 		super();
 		this.setting = setting;
 		this.x = x;
 		this.y = y;
 		this.width = width;
 		this.height = height;
+		this.controlX = controlX;
+		this.controlY = controlY;
+		this.controlWidth = controlWidth;
+		this.controlHeight = controlHeight;
 	}
 }
 
@@ -363,12 +393,12 @@ class TabButtonLayout extends Object {
 
 
 //==============================================================================
-// 플레이어 정보 파트.
+// 메뉴 파트 (이전 PlayerPart). 비게임 UI 이므로 WorldNode 기반.
 // - 상단 탭 (상태, 경지, 물품, 장비, 산패, 특성, 관계, 일지, 설정) 으로 보유 정보를 분류 표시.
 // - 외부에서 setProfile / setInventory / setOwnedCards / setAbilities / setRelations / setJournal 로 데이터 주입.
 // - 직접 조작은 탭 전환만 (편성 / 사용 등은 추후 GrowthPart 등 별도 파트에서).
 //==============================================================================
-export class PlayerPart extends Object {
+export class MenuPart extends WorldNode {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
@@ -393,6 +423,14 @@ export class PlayerPart extends Object {
 	/** @private @type { boolean } */ #wasTouchPressed;
 	/** @private @type { ((string) => void) | null } */ #onSettingActionInvoked;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
+	/** @private @type { number } */ #settingsScrollY;
+	/** @private @type { number } */ #settingsScrollMaxY;
+	/** @private @type { number } */ #settingsViewportHeight;
+	/** @private @type { number } */ #settingsContentHeight;
+	/** @private @type { { x: number, y: number } | null } */ #settingsDragLastPosition;
+	/** @private @type { boolean } */ #settingsDragStartedInside;
+	/** @private @type { number } */ #pendingWheelDeltaY;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #settingsViewportRect;
 
 	//==============================================================================
 	// 생성.
@@ -414,13 +452,28 @@ export class PlayerPart extends Object {
 		this.#settings = [];
 		this.#equipment = [];
 		this.#realmInfo = null;
-		this.#activeTabKey = PlayerPartTabKey.profile;
+		this.#activeTabKey = MenuPartTabKey.profile;
 		this.#tabButtonLayouts = [];
 		this.#settingRowLayouts = [];
 		this.#wasTouchPressed = false;
 		this.#onSettingActionInvoked = null;
 		this.#audioBeepPlayer = null;
+		this.#settingsScrollY = 0;
+		this.#settingsScrollMaxY = 0;
+		this.#settingsViewportHeight = 0;
+		this.#settingsContentHeight = 0;
+		this.#settingsDragLastPosition = null;
+		this.#settingsDragStartedInside = false;
+		this.#pendingWheelDeltaY = 0;
+		this.#settingsViewportRect = null;
 		this.installSampleData();
+		// 마우스 휠 입력은 InputManager 가 다루지 않으므로 직접 이벤트를 받아 누적한다.
+		// 누적된 양은 다음 tick 에서 settingsScrollY 에 반영 (설정 탭 활성화 시에만).
+		if (typeof window !== "undefined") {
+			window.addEventListener("wheel", (wheelEvent) => {
+				this.#pendingWheelDeltaY += wheelEvent.deltaY;
+			}, { passive: true });
+		}
 	}
 
 	//==============================================================================
@@ -528,6 +581,8 @@ export class PlayerPart extends Object {
 	//==============================================================================
 	reset() {
 		this.#wasTouchPressed = false;
+		this.#settingsDragLastPosition = null;
+		this.#settingsDragStartedInside = false;
 	}
 
 	//==============================================================================
@@ -540,8 +595,63 @@ export class PlayerPart extends Object {
 	 */
 	tick(timeDelta, inputManager, popupRect) {
 		const isPressed = inputManager.isTouchPressed();
+		const isMoving = inputManager.isTouchMoved();
+		const viewInputPosition = inputManager.getViewInputPosition();
+
+		// 설정 탭 활성화 시 드래그 / 휠 / 키보드 스크롤 처리.
+		// 주의: isTouchPressed 는 mousedown 한 프레임만 true (engine.js 가 매 프레임 false 로 리셋).
+		// 드래그 유지 판정은 isTouchMoved (마우스가 눌려있는 동안 true 유지) 로 한다.
+		if (this.#activeTabKey === MenuPartTabKey.settings) {
+			if (isPressed && !this.#wasTouchPressed) {
+				const isInsideSettingsViewport = this.isInsideSettingsViewport(viewInputPosition);
+				this.#settingsDragStartedInside = isInsideSettingsViewport;
+				if (isInsideSettingsViewport) {
+					this.#settingsDragLastPosition = { x: viewInputPosition.x, y: viewInputPosition.y };
+				}
+				else {
+					this.#settingsDragLastPosition = null;
+				}
+			}
+			else if (isMoving && this.#settingsDragLastPosition !== null) {
+				const dragDeltaY = viewInputPosition.y - this.#settingsDragLastPosition.y;
+				this.#settingsScrollY -= dragDeltaY;
+				this.#settingsDragLastPosition = { x: viewInputPosition.x, y: viewInputPosition.y };
+			}
+			else if (!isMoving) {
+				this.#settingsDragLastPosition = null;
+			}
+
+			// 마우스 휠 누적분을 적용.
+			if (this.#pendingWheelDeltaY !== 0) {
+				this.#settingsScrollY += this.#pendingWheelDeltaY;
+				this.#pendingWheelDeltaY = 0;
+			}
+
+			// 키보드 화살표로 스크롤.
+			if (inputManager.isKeyPressed("ArrowUp")) {
+				this.#settingsScrollY -= SCROLL_KEYBOARD_SPEED * timeDelta;
+			}
+			if (inputManager.isKeyPressed("ArrowDown")) {
+				this.#settingsScrollY += SCROLL_KEYBOARD_SPEED * timeDelta;
+			}
+
+			// 스크롤 범위 클램프.
+			if (this.#settingsScrollY < 0) {
+				this.#settingsScrollY = 0;
+			}
+			if (this.#settingsScrollY > this.#settingsScrollMaxY) {
+				this.#settingsScrollY = this.#settingsScrollMaxY;
+			}
+		}
+		else {
+			this.#settingsDragLastPosition = null;
+			this.#settingsDragStartedInside = false;
+			// 다른 탭에서는 누적된 휠 입력 폐기 (설정 탭 진입 시 점프 방지).
+			this.#pendingWheelDeltaY = 0;
+		}
+
+		// 클릭 처리 (드래그 시작이면 클릭으로 보지 않음 — handleClick 호출 전 설정 영역 안에서는 클릭만 한 경우에만 처리).
 		if (isPressed && !this.#wasTouchPressed) {
-			const viewInputPosition = inputManager.getViewInputPosition();
 			this.handleClick(viewInputPosition);
 		}
 		this.#wasTouchPressed = isPressed;
@@ -558,6 +668,7 @@ export class PlayerPart extends Object {
 			if (this.isInsideRect(viewInputPosition, buttonLayout.x, buttonLayout.y, buttonLayout.width, buttonLayout.height)) {
 				if (this.#activeTabKey !== buttonLayout.tabKey) {
 					this.#activeTabKey = buttonLayout.tabKey;
+					this.#settingsScrollY = 0;
 					const tabAudioBeepPlayer = this.getAudioBeepPlayer();
 					if (tabAudioBeepPlayer) {
 						tabAudioBeepPlayer.playClick();
@@ -566,10 +677,11 @@ export class PlayerPart extends Object {
 				return;
 			}
 		}
-		// 설정 탭 활성화 시 행 클릭 → 토글 또는 액션 콜백.
-		if (this.#activeTabKey === PlayerPartTabKey.settings) {
+		// 설정 탭 활성화 시 우측 명시적 컨트롤 버튼만 클릭으로 토글 / 사이클 / 액션 처리.
+		// 행의 라벨 / 설명 영역은 드래그 스크롤 영역이므로 클릭으로 잡지 않는다.
+		if (this.#activeTabKey === MenuPartTabKey.settings) {
 			for (const settingRowLayout of this.#settingRowLayouts) {
-				if (this.isInsideRect(viewInputPosition, settingRowLayout.x, settingRowLayout.y, settingRowLayout.width, settingRowLayout.height)) {
+				if (this.isInsideRect(viewInputPosition, settingRowLayout.controlX, settingRowLayout.controlY, settingRowLayout.controlWidth, settingRowLayout.controlHeight)) {
 					const setting = settingRowLayout.setting;
 					const settingAudioBeepPlayer = this.getAudioBeepPlayer();
 					if (settingAudioBeepPlayer) {
@@ -578,13 +690,65 @@ export class PlayerPart extends Object {
 					if (setting.isToggle) {
 						setting.isOn = !setting.isOn;
 						setting.valueLabel = setting.isOn ? "켬" : "끔";
+						this.persistToggleSetting(setting);
+						// 토글은 설정창 안에서 변경만 — 외부 콜백 호출하지 않음 (오버레이 유지).
+					}
+					else if (setting.cycleOptions.length > 0) {
+						setting.cycleIndex = (setting.cycleIndex + 1) % setting.cycleOptions.length;
+						setting.valueLabel = setting.cycleOptions[setting.cycleIndex];
+						this.persistCycleSetting(setting);
+						// 사이클도 설정창 유지.
 					}
 					else if (this.#onSettingActionInvoked) {
-						// 비-토글 항목 (저장 / 불러오기 / 처음으로 등) 은 외부 매니저가 처리.
+						// 액션 항목(저장 / 불러오기 / 처음으로 등) 만 외부로 위임.
 						this.#onSettingActionInvoked(setting.key);
 					}
 					return;
 				}
+			}
+		}
+	}
+
+	//==============================================================================
+	// 토글 설정의 변경 사항을 UserSettings (localStorage) 에 영속화.
+	//==============================================================================
+	/**
+	 * @param { SettingEntry } setting
+	 */
+	persistToggleSetting(setting) {
+		switch (setting.key) {
+			case "beep": {
+				setBeepEnabled(setting.isOn);
+				break;
+			}
+			case "floatingText": {
+				setFloatingTextEnabled(setting.isOn);
+				break;
+			}
+			case "autoEndTurn": {
+				setAutoEndTurnEnabled(setting.isOn);
+				break;
+			}
+		}
+	}
+
+	//==============================================================================
+	// 사이클 설정의 변경 사항을 UserSettings (localStorage) 에 영속화.
+	//==============================================================================
+	/**
+	 * @param { SettingEntry } setting
+	 */
+	persistCycleSetting(setting) {
+		const levelOptionKeys = [SettingLevel.high, SettingLevel.normal, SettingLevel.low, SettingLevel.none];
+		const levelKey = levelOptionKeys[setting.cycleIndex] || SettingLevel.normal;
+		switch (setting.key) {
+			case "handFanAngle": {
+				setHandFanAngleLevel(levelKey);
+				break;
+			}
+			case "handOverlap": {
+				setHandOverlapLevel(levelKey);
+				break;
 			}
 		}
 	}
@@ -606,23 +770,23 @@ export class PlayerPart extends Object {
 		// 헤더.
 		this.drawHeader(canvasRenderingContext, popupRect);
 
-		// 탭 바 — 헤더의 골드 underline 과 충분한 간격.
+		// 컨텐츠 영역 먼저 그린 뒤 탭 바를 위에 그린다 (탭이 컨텐츠에 의해 가려지지 않게).
 		const tabBarY = popupRect.y + HEADER_HEIGHT + HEADER_TO_TAB_GAP;
-		this.drawTabBar(canvasRenderingContext, popupRect.x + SIDE_MARGIN, tabBarY, popupRect.width - SIDE_MARGIN * 2);
-
-		// 컨텐츠 영역 — 탭과도 떨어뜨리고 푸터와도 여백.
 		const contentX = popupRect.x + SIDE_MARGIN;
 		const contentY = tabBarY + TAB_BAR_HEIGHT + TAB_TO_CONTENT_GAP;
 		const contentWidth = popupRect.width - SIDE_MARGIN * 2;
 		const contentHeight = popupRect.height - (contentY - popupRect.y) - FOOTER_HEIGHT - 16;
 		this.drawActiveTab(canvasRenderingContext, contentX, contentY, contentWidth, contentHeight);
 
+		// 탭 바 (컨텐츠 위).
+		this.drawTabBar(canvasRenderingContext, popupRect.x + SIDE_MARGIN, tabBarY, popupRect.width - SIDE_MARGIN * 2);
+
 		// 푸터.
 		this.drawFooter(canvasRenderingContext, popupRect);
 	}
 
 	//==============================================================================
-	// 헤더 (좌측 타이틀 + 우측 체력 / 일자).
+	// 헤더 (좌측 타이틀). 타이틀은 현재 활성 탭 라벨로 동적 표기.
 	//==============================================================================
 	/**
 	 * @param { CanvasRenderingContext2D } canvasRenderingContext
@@ -642,8 +806,8 @@ export class PlayerPart extends Object {
 		canvasRenderingContext.font = "bold 22px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText("목록", popupRect.x + SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
-		// 우상단 자금/일자 표기는 상태 탭 안의 "정보" 섹션으로 이동 — 헤더 우측은 비워둠.
+		const headerTitleText = this.tabLabel(this.#activeTabKey);
+		canvasRenderingContext.fillText(headerTitleText, popupRect.x + SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
 	}
 
 	//==============================================================================
@@ -658,15 +822,15 @@ export class PlayerPart extends Object {
 	drawTabBar(canvasRenderingContext, x, y, width) {
 		this.#tabButtonLayouts = [];
 		const tabKeys = [
-			PlayerPartTabKey.profile,
-			PlayerPartTabKey.realm,
-			PlayerPartTabKey.inventory,
-			PlayerPartTabKey.equipment,
-			PlayerPartTabKey.deck,
-			PlayerPartTabKey.abilities,
-			PlayerPartTabKey.relations,
-			PlayerPartTabKey.journal,
-			PlayerPartTabKey.settings,
+			MenuPartTabKey.profile,
+			MenuPartTabKey.realm,
+			MenuPartTabKey.inventory,
+			MenuPartTabKey.equipment,
+			MenuPartTabKey.deck,
+			MenuPartTabKey.abilities,
+			MenuPartTabKey.relations,
+			MenuPartTabKey.journal,
+			MenuPartTabKey.settings,
 		];
 		const tabCount = tabKeys.length;
 		const totalGapWidth = TAB_GAP * (tabCount - 1);
@@ -698,31 +862,31 @@ export class PlayerPart extends Object {
 	 */
 	tabLabel(tabKey) {
 		switch (tabKey) {
-			case PlayerPartTabKey.profile: {
+			case MenuPartTabKey.profile: {
 				return "상태";
 			}
-			case PlayerPartTabKey.realm: {
+			case MenuPartTabKey.realm: {
 				return "경지";
 			}
-			case PlayerPartTabKey.inventory: {
+			case MenuPartTabKey.inventory: {
 				return "물품";
 			}
-			case PlayerPartTabKey.equipment: {
+			case MenuPartTabKey.equipment: {
 				return "장비";
 			}
-			case PlayerPartTabKey.deck: {
+			case MenuPartTabKey.deck: {
 				return "산패";
 			}
-			case PlayerPartTabKey.abilities: {
+			case MenuPartTabKey.abilities: {
 				return "특성";
 			}
-			case PlayerPartTabKey.relations: {
+			case MenuPartTabKey.relations: {
 				return "관계";
 			}
-			case PlayerPartTabKey.journal: {
+			case MenuPartTabKey.journal: {
 				return "일지";
 			}
-			case PlayerPartTabKey.settings: {
+			case MenuPartTabKey.settings: {
 				return "설정";
 			}
 			default: {
@@ -748,39 +912,39 @@ export class PlayerPart extends Object {
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.strokeRect(x, y, width, height);
 		switch (this.#activeTabKey) {
-			case PlayerPartTabKey.profile: {
+			case MenuPartTabKey.profile: {
 				this.drawProfileTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
-			case PlayerPartTabKey.realm: {
+			case MenuPartTabKey.realm: {
 				this.drawRealmTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
-			case PlayerPartTabKey.inventory: {
+			case MenuPartTabKey.inventory: {
 				this.drawInventoryTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
-			case PlayerPartTabKey.equipment: {
+			case MenuPartTabKey.equipment: {
 				this.drawEquipmentTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
-			case PlayerPartTabKey.deck: {
+			case MenuPartTabKey.deck: {
 				this.drawDeckTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
-			case PlayerPartTabKey.abilities: {
+			case MenuPartTabKey.abilities: {
 				this.drawAbilitiesTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
-			case PlayerPartTabKey.relations: {
+			case MenuPartTabKey.relations: {
 				this.drawRelationsTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
-			case PlayerPartTabKey.journal: {
+			case MenuPartTabKey.journal: {
 				this.drawJournalTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
-			case PlayerPartTabKey.settings: {
+			case MenuPartTabKey.settings: {
 				this.drawSettingsTab(canvasRenderingContext, x, y, width, height);
 				break;
 			}
@@ -1285,17 +1449,22 @@ export class PlayerPart extends Object {
 			return;
 		}
 
+		const currentRealmName = typeof this.#realmInfo.currentRealmName === "string" ? this.#realmInfo.currentRealmName : "";
+		const currentRealmDescription = typeof this.#realmInfo.currentRealmDescription === "string" ? this.#realmInfo.currentRealmDescription : "";
+		const nextRealmName = typeof this.#realmInfo.nextRealmName === "string" ? this.#realmInfo.nextRealmName : "";
+		const breakthroughHint = typeof this.#realmInfo.breakthroughHint === "string" ? this.#realmInfo.breakthroughHint : "";
+
 		// 현재 경지명.
 		canvasRenderingContext.fillStyle = "#ffffff";
 		canvasRenderingContext.font = "bold 22px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "top";
-		canvasRenderingContext.fillText(this.#realmInfo.currentRealmName, innerX, innerY);
+		canvasRenderingContext.fillText(currentRealmName, innerX, innerY);
 
-		// 경지 설명 (자동 줄바꿈).
-		canvasRenderingContext.fillStyle = "#dddddd";
+		// 경지 설명 (자동 줄바꿈) — measureText 가 폰트에 영향받으므로 본문 폰트로 먼저 설정.
 		canvasRenderingContext.font = "14px GyeonggiBatang, sans-serif";
-		const descriptionLines = this.wrapTextByWidth(canvasRenderingContext, this.#realmInfo.currentRealmDescription, width - 32);
+		canvasRenderingContext.fillStyle = "#dddddd";
+		const descriptionLines = this.wrapTextByWidth(canvasRenderingContext, currentRealmDescription, width - 32);
 		const descriptionTopY = innerY + 32;
 		const descriptionLineHeight = 20;
 		for (let lineIndex = 0; lineIndex < descriptionLines.length; ++lineIndex) {
@@ -1308,20 +1477,20 @@ export class PlayerPart extends Object {
 		canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "top";
-		const nextRealmLabel = this.#realmInfo.nextRealmName.length > 0
-			? `다음 경지: ${this.#realmInfo.nextRealmName}`
+		const nextRealmLabel = nextRealmName.length > 0
+			? `다음 경지: ${nextRealmName}`
 			: "다음 경지 없음 (최고 경지)";
 		canvasRenderingContext.fillText(nextRealmLabel, innerX, nextRealmTopY);
 
-		if (this.#realmInfo.nextRealmName.length > 0) {
+		if (nextRealmName.length > 0) {
 			const hintTopY = nextRealmTopY + 24;
 			canvasRenderingContext.fillStyle = "#aaaabb";
 			canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
 			canvasRenderingContext.fillText("돌파 조건", innerX, hintTopY);
-			canvasRenderingContext.fillStyle = "#dddddd";
 			canvasRenderingContext.font = "14px GyeonggiBatang, sans-serif";
-			const breakthroughText = this.#realmInfo.breakthroughHint.length > 0
-				? this.#realmInfo.breakthroughHint
+			canvasRenderingContext.fillStyle = "#dddddd";
+			const breakthroughText = breakthroughHint.length > 0
+				? breakthroughHint
 				: "조건이 맞는 이벤트에서 돌파한다.";
 			const hintLines = this.wrapTextByWidth(canvasRenderingContext, breakthroughText, width - 32);
 			for (let lineIndex = 0; lineIndex < hintLines.length; ++lineIndex) {
@@ -1394,7 +1563,7 @@ export class PlayerPart extends Object {
 	}
 
 	//==============================================================================
-	// 설정 탭. 행 클릭 → 토글 (isToggle=true 항목만).
+	// 설정 탭. 행 클릭 → 토글 (isToggle=true 항목만). 수직 스크롤 지원.
 	//==============================================================================
 	/**
 	 * @param { CanvasRenderingContext2D } canvasRenderingContext
@@ -1407,17 +1576,58 @@ export class PlayerPart extends Object {
 		this.#settingRowLayouts = [];
 		this.drawListHeader(canvasRenderingContext, x, y, width, "설정");
 		const listTopY = y + 48;
+		const viewportHeight = height - (listTopY - y) - 4;
 		const listInnerWidth = width - 32;
 		const innerX = x + 16;
+		const totalContentHeight = this.#settings.length > 0
+			? this.#settings.length * (LIST_ROW_HEIGHT + LIST_ROW_GAP) - LIST_ROW_GAP
+			: 0;
+		const scrollMaxY = System.Math.max(0, totalContentHeight - viewportHeight);
+		this.#settingsContentHeight = totalContentHeight;
+		this.#settingsViewportHeight = viewportHeight;
+		this.#settingsScrollMaxY = scrollMaxY;
+		this.#settingsViewportRect = { x: x + 4, y: listTopY, width: width - 8, height: viewportHeight };
+		if (this.#settingsScrollY > scrollMaxY) {
+			this.#settingsScrollY = scrollMaxY;
+		}
+
+		// 클립 영역 안에서만 행 출력.
+		canvasRenderingContext.save();
+		canvasRenderingContext.beginPath();
+		canvasRenderingContext.rect(x + 4, listTopY, width - 8, viewportHeight);
+		canvasRenderingContext.clip();
 		for (let entryIndex = 0; entryIndex < this.#settings.length; ++entryIndex) {
 			const entry = this.#settings[entryIndex];
-			const rowY = listTopY + entryIndex * (LIST_ROW_HEIGHT + LIST_ROW_GAP);
-			if (rowY + LIST_ROW_HEIGHT > y + height - 4) {
+			const rowY = listTopY + entryIndex * (LIST_ROW_HEIGHT + LIST_ROW_GAP) - this.#settingsScrollY;
+			// 컬링: 뷰포트 바깥 행은 그리지 않음.
+			if (rowY + LIST_ROW_HEIGHT < listTopY) {
+				continue;
+			}
+			if (rowY > listTopY + viewportHeight) {
 				break;
 			}
-			this.drawSettingRow(canvasRenderingContext, entry, innerX, rowY, listInnerWidth, LIST_ROW_HEIGHT);
-			this.#settingRowLayouts.push(new SettingRowLayout(entry, innerX, rowY, listInnerWidth, LIST_ROW_HEIGHT));
+			const rowWidth = listInnerWidth - SCROLL_BAR_WIDTH - 8;
+			const controlRect = this.drawSettingRow(canvasRenderingContext, entry, innerX, rowY, rowWidth, LIST_ROW_HEIGHT);
+			this.#settingRowLayouts.push(new SettingRowLayout(entry, innerX, rowY, rowWidth, LIST_ROW_HEIGHT, controlRect.x, controlRect.y, controlRect.width, controlRect.height));
 		}
+		canvasRenderingContext.restore();
+
+		// 스크롤바 (필요한 경우만).
+		if (scrollMaxY > 0) {
+			const trackX = x + width - SCROLL_BAR_WIDTH - 4;
+			const trackY = listTopY + 2;
+			const trackHeight = viewportHeight - 4;
+			canvasRenderingContext.fillStyle = "#16203a";
+			canvasRenderingContext.fillRect(trackX, trackY, SCROLL_BAR_WIDTH, trackHeight);
+			canvasRenderingContext.strokeStyle = "#3a4a6a";
+			canvasRenderingContext.lineWidth = 1;
+			canvasRenderingContext.strokeRect(trackX, trackY, SCROLL_BAR_WIDTH, trackHeight);
+			const thumbHeight = System.Math.max(28, trackHeight * (viewportHeight / totalContentHeight));
+			const thumbY = trackY + (this.#settingsScrollY / scrollMaxY) * (trackHeight - thumbHeight);
+			canvasRenderingContext.fillStyle = "#d4b46a";
+			canvasRenderingContext.fillRect(trackX, thumbY, SCROLL_BAR_WIDTH, thumbHeight);
+		}
+
 		if (this.#settings.length === 0) {
 			this.drawEmptyMessage(canvasRenderingContext, x, y, width, height, "설정 항목이 없다.");
 		}
@@ -1430,6 +1640,7 @@ export class PlayerPart extends Object {
 	 * @param { number } y
 	 * @param { number } width
 	 * @param { number } height
+	 * @returns { { x: number, y: number, width: number, height: number } }
 	 */
 	drawSettingRow(canvasRenderingContext, entry, x, y, width, height) {
 		canvasRenderingContext.fillStyle = "#1f2a48";
@@ -1438,6 +1649,14 @@ export class PlayerPart extends Object {
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.strokeRect(x, y, width, height);
 
+		// 우측 명시적 컨트롤 버튼 영역 계산. 토글/사이클/액션 모두 동일한 박스 형태.
+		const controlButtonWidth = 96;
+		const controlButtonHeight = height - 16;
+		const controlButtonX = x + width - controlButtonWidth - 12;
+		const controlButtonY = y + (height - controlButtonHeight) * 0.5;
+
+		// 좌측: 라벨 + 설명 (드래그 영역, 컨트롤 버튼과 겹치지 않도록 폭 제한).
+		const textAreaWidth = controlButtonX - (x + 12) - 12;
 		canvasRenderingContext.fillStyle = "#ffffff";
 		canvasRenderingContext.font = "bold 15px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "left";
@@ -1446,16 +1665,55 @@ export class PlayerPart extends Object {
 
 		canvasRenderingContext.fillStyle = "#aaaabb";
 		canvasRenderingContext.font = "12px GyeonggiBatang, sans-serif";
-		canvasRenderingContext.fillText(entry.description, x + 12, y + 30);
+		canvasRenderingContext.fillText(this.clampTextToWidth(canvasRenderingContext, entry.description, textAreaWidth), x + 12, y + 30);
 
-		// 우측 값 표기 (토글이면 ON/OFF 박스, 액션이면 단순 라벨).
-		const rightValueText = entry.valueLabel && entry.valueLabel.length > 0 ? entry.valueLabel : (entry.isToggle ? (entry.isOn ? "켬" : "끔") : "실행");
-		const valueColor = entry.isToggle ? (entry.isOn ? "#88dd88" : "#dd6666") : "#d4b46a";
-		canvasRenderingContext.fillStyle = valueColor;
+		// 우측 컨트롤 버튼 (토글이면 ON/OFF 색, 사이클이면 골드, 액션이면 골드).
+		const buttonValueText = entry.valueLabel && entry.valueLabel.length > 0 ? entry.valueLabel : (entry.isToggle ? (entry.isOn ? "켬" : "끔") : "실행");
+		const buttonBackgroundColor = entry.isToggle ? (entry.isOn ? "#1e3a25" : "#3a1e1e") : "#2a2a40";
+		const buttonBorderColor = entry.isToggle ? (entry.isOn ? "#88dd88" : "#dd6666") : "#d4b46a";
+		const buttonTextColor = entry.isToggle ? (entry.isOn ? "#88dd88" : "#dd6666") : "#d4b46a";
+		canvasRenderingContext.fillStyle = buttonBackgroundColor;
+		canvasRenderingContext.fillRect(controlButtonX, controlButtonY, controlButtonWidth, controlButtonHeight);
+		canvasRenderingContext.strokeStyle = buttonBorderColor;
+		canvasRenderingContext.lineWidth = 2;
+		canvasRenderingContext.strokeRect(controlButtonX, controlButtonY, controlButtonWidth, controlButtonHeight);
+		canvasRenderingContext.fillStyle = buttonTextColor;
 		canvasRenderingContext.font = "bold 14px GyeonggiBatangBold, sans-serif";
-		canvasRenderingContext.textAlign = "right";
+		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(rightValueText, x + width - 14, y + height * 0.5);
+		canvasRenderingContext.fillText(buttonValueText, controlButtonX + controlButtonWidth * 0.5, controlButtonY + controlButtonHeight * 0.5);
+
+		return { x: controlButtonX, y: controlButtonY, width: controlButtonWidth, height: controlButtonHeight };
+	}
+
+	//==============================================================================
+	// 텍스트가 maxWidth 보다 길면 말줄임표(…) 로 자른다.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { string } text
+	 * @param { number } maxWidth
+	 * @returns { string }
+	 */
+	clampTextToWidth(canvasRenderingContext, text, maxWidth) {
+		if (typeof text !== "string" || text.length === 0) {
+			return "";
+		}
+		const fullMetrics = canvasRenderingContext.measureText(text);
+		if (fullMetrics.width <= maxWidth) {
+			return text;
+		}
+		const ellipsis = "…";
+		let truncated = text;
+		while (truncated.length > 0) {
+			truncated = truncated.substring(0, truncated.length - 1);
+			const candidate = truncated + ellipsis;
+			const candidateMetrics = canvasRenderingContext.measureText(candidate);
+			if (candidateMetrics.width <= maxWidth) {
+				return candidate;
+			}
+		}
+		return ellipsis;
 	}
 
 	//==============================================================================
@@ -1514,6 +1772,44 @@ export class PlayerPart extends Object {
 	}
 
 	//==============================================================================
+	// 폭에 맞춰 텍스트를 줄단위로 분리. 공백/한자/한글 모두 글자 단위로 끊는다.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { string } text
+	 * @param { number } maxWidth
+	 * @returns { string[] }
+	 */
+	wrapTextByWidth(canvasRenderingContext, text, maxWidth) {
+		const lines = [];
+		if (typeof text !== "string" || text.length === 0) {
+			return lines;
+		}
+		let currentLine = "";
+		for (let charIndex = 0; charIndex < text.length; ++charIndex) {
+			const character = text.charAt(charIndex);
+			if (character === "\n") {
+				lines.push(currentLine);
+				currentLine = "";
+				continue;
+			}
+			const candidate = currentLine + character;
+			const candidateMetrics = canvasRenderingContext.measureText(candidate);
+			if (candidateMetrics.width > maxWidth && currentLine.length > 0) {
+				lines.push(currentLine);
+				currentLine = character;
+			}
+			else {
+				currentLine = candidate;
+			}
+		}
+		if (currentLine.length > 0) {
+			lines.push(currentLine);
+		}
+		return lines;
+	}
+
+	//==============================================================================
 	// 좌표가 사각형 내부인지.
 	//==============================================================================
 	/**
@@ -1528,6 +1824,20 @@ export class PlayerPart extends Object {
 		const insideX = viewInputPosition.x >= x && viewInputPosition.x <= x + width;
 		const insideY = viewInputPosition.y >= y && viewInputPosition.y <= y + height;
 		return insideX && insideY;
+	}
+
+	//==============================================================================
+	// 설정 탭 뷰포트(스크롤 가능 컨텐츠 영역) 안인지. 마지막으로 그린 viewport rect 기준으로 판정.
+	//==============================================================================
+	/**
+	 * @param { { x: number, y: number } } viewInputPosition
+	 * @returns { boolean }
+	 */
+	isInsideSettingsViewport(viewInputPosition) {
+		if (this.#settingsViewportRect === null) {
+			return false;
+		}
+		return this.isInsideRect(viewInputPosition, this.#settingsViewportRect.x, this.#settingsViewportRect.y, this.#settingsViewportRect.width, this.#settingsViewportRect.height);
 	}
 
 	//==============================================================================
@@ -1593,13 +1903,21 @@ export class PlayerPart extends Object {
 		sampleJournal.push(new JournalEntry(1, 1, "검종 입문 시험", "검종 산문 앞에서 장로의 검을 받아냈다."));
 		this.setJournal(sampleJournal);
 
+		const userSettings = getUserSettings();
+		const levelOptionKeys = [SettingLevel.high, SettingLevel.normal, SettingLevel.low, SettingLevel.none];
+		const levelOptionLabels = [levelLabel(SettingLevel.high), levelLabel(SettingLevel.normal), levelLabel(SettingLevel.low), levelLabel(SettingLevel.none)];
+		const fanAngleIndex = System.Math.max(0, levelOptionKeys.indexOf(userSettings.handFanAngleLevel));
+		const overlapIndex = System.Math.max(0, levelOptionKeys.indexOf(userSettings.handOverlapLevel));
+
 		const sampleSettings = [];
-		sampleSettings.push(new SettingEntry("beep", "비프 효과음", "버튼·타이핑 소리 재생", true, true, "켬"));
-		sampleSettings.push(new SettingEntry("floatingText", "플로팅 텍스트", "수치 / 대사 말풍선 표시", true, true, "켬"));
-		sampleSettings.push(new SettingEntry("autoEndTurn", "자동 턴 종료", "행동력 0 일 때 자동 종료", true, false, "끔"));
-		sampleSettings.push(new SettingEntry("save", "저장", "현재 진행 상태를 저장", false, false, "실행"));
-		sampleSettings.push(new SettingEntry("load", "불러오기", "저장된 진행 상태 불러오기", false, false, "실행"));
-		sampleSettings.push(new SettingEntry("restart", "처음으로", "처음 화면으로 돌아가기", false, false, "실행"));
+		sampleSettings.push(new SettingEntry("beep", "비프 효과음", "버튼·타이핑 소리 재생", true, userSettings.isBeepEnabled, userSettings.isBeepEnabled ? "켬" : "끔", [], 0));
+		sampleSettings.push(new SettingEntry("floatingText", "플로팅 텍스트", "수치 / 대사 말풍선 표시", true, userSettings.isFloatingTextEnabled, userSettings.isFloatingTextEnabled ? "켬" : "끔", [], 0));
+		sampleSettings.push(new SettingEntry("autoEndTurn", "자동 턴 종료", "행동력 0 일 때 자동 종료", true, userSettings.isAutoEndTurnEnabled, userSettings.isAutoEndTurnEnabled ? "켬" : "끔", [], 0));
+		sampleSettings.push(new SettingEntry("handFanAngle", "손패 부채꼴 각도", "손패 카드의 부채꼴 회전량", false, false, levelOptionLabels[fanAngleIndex], levelOptionLabels.slice(), fanAngleIndex));
+		sampleSettings.push(new SettingEntry("handOverlap", "손패 겹치기 정도", "손패 카드 사이의 가로 간격", false, false, levelOptionLabels[overlapIndex], levelOptionLabels.slice(), overlapIndex));
+		sampleSettings.push(new SettingEntry("save", "저장", "현재 진행 상태를 저장", false, false, "실행", [], 0));
+		sampleSettings.push(new SettingEntry("load", "불러오기", "저장된 진행 상태 불러오기", false, false, "실행", [], 0));
+		sampleSettings.push(new SettingEntry("restart", "처음으로", "처음 화면으로 돌아가기", false, false, "실행", [], 0));
 		this.setSettings(sampleSettings);
 	}
 
@@ -1628,4 +1946,4 @@ export class PlayerPart extends Object {
 //==============================================================================
 // 외부 사용을 위한 식별자 / 클래스 재공개.
 //==============================================================================
-export { PlayerPartTabKey, InventoryEntry, OwnedCardEntry, AbilityEntry, RelationEntry, JournalEntry, BaseStatEntry, CombatStatEntry, SettingEntry, EquipmentSlot, RealmInfo };
+export { MenuPartTabKey, InventoryEntry, OwnedCardEntry, AbilityEntry, RelationEntry, JournalEntry, BaseStatEntry, CombatStatEntry, SettingEntry, EquipmentSlot, RealmInfo };
