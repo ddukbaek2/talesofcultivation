@@ -332,7 +332,7 @@ export function resolveGamepadButtonIndex(actionKey) {
 // "just pressed" 가 필요한 호출자는 자체 prev 상태를 유지한 뒤 비교해야 한다.
 //==============================================================================
 /**
- * @param { import("../../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
+ * @param { InputManager } inputManager
  * @param { string } actionKey
  * @returns { boolean }
  */

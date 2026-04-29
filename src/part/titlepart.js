@@ -187,7 +187,7 @@ export class TitlePart extends Object {
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { import("../../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
+	 * @param { InputManager } inputManager
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	tick(timeDelta, inputManager, popupRect) {
@@ -284,7 +284,7 @@ export class TitlePart extends Object {
 	// 출력.
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
+	 * @param { Graphic } graphic
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	draw(graphic, popupRect) {
@@ -296,8 +296,8 @@ export class TitlePart extends Object {
 
 		const popupCenterX = popupRect.x + popupRect.width * 0.5;
 
-		// 타이틀 (위에서 1/3 지점).
-		const titleCenterY = popupRect.y + popupRect.height * 0.32;
+		// 타이틀 (위에서 1/4 지점).
+		const titleCenterY = popupRect.y + popupRect.height * 0.22;
 		canvasRenderingContext.fillStyle = "#d4b46a";
 		canvasRenderingContext.font = TITLE_FONT;
 		canvasRenderingContext.textAlign = "center";
@@ -308,10 +308,10 @@ export class TitlePart extends Object {
 		canvasRenderingContext.font = SUBTITLE_FONT;
 		canvasRenderingContext.fillText(this.#subtitleText, popupCenterX, titleCenterY + 56);
 
-		// 메뉴 버튼 (가운데 정렬, 세로 스택).
+		// 메뉴 버튼 (가운데 정렬, 세로 스택). 중심을 아래쪽 70% 지점으로 배치.
 		this.#buttonLayouts = [];
 		const buttonsTotalHeight = this.#buttons.length * BUTTON_HEIGHT + (this.#buttons.length - 1) * BUTTON_GAP;
-		const buttonsTopY = popupRect.y + popupRect.height * 0.58 - buttonsTotalHeight * 0.5;
+		const buttonsTopY = popupRect.y + popupRect.height * 0.70 - buttonsTotalHeight * 0.5;
 		const buttonInsetX = popupCenterX - BUTTON_WIDTH * 0.5;
 		for (let buttonIndex = 0; buttonIndex < this.#buttons.length; ++buttonIndex) {
 			const button = this.#buttons[buttonIndex];
@@ -320,12 +320,12 @@ export class TitlePart extends Object {
 			this.#buttonLayouts.push(new TitleMenuButtonLayout(button, buttonInsetX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT));
 		}
 
-		// 하단 안내 (저작권 / 빌드).
+		// 우하단 버전 표기.
 		canvasRenderingContext.fillStyle = "#555566";
 		canvasRenderingContext.font = "12px GyeonggiBatang, sans-serif";
-		canvasRenderingContext.textAlign = "center";
+		canvasRenderingContext.textAlign = "right";
 		canvasRenderingContext.textBaseline = "bottom";
-		canvasRenderingContext.fillText("개발 중 · 인하우스 빌드", popupCenterX, popupRect.y + popupRect.height - 16);
+		canvasRenderingContext.fillText("v0.0.1", popupRect.x + popupRect.width - 16, popupRect.y + popupRect.height - 16);
 	}
 
 	//==============================================================================

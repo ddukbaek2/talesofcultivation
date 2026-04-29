@@ -19,7 +19,7 @@ import { MergeGame } from "./minigame/mergegame.js";
 import { BattlePart } from "./part/battlepart.js";
 import { DialoguePart } from "./part/dialoguepart.js";
 import { MapPart } from "./part/mappart.js";
-import { MenuPart } from "./part/menupart.js";
+import { MenuPartNode } from "./part/menupartnode.js";
 import { DungeonPart } from "./part/dungeonpart.js";
 import { TitlePart } from "./part/titlepart.js";
 import { SavePart } from "./part/savepart.js";
@@ -91,7 +91,7 @@ export class TalesOfCultivation extends Scene {
 	/** @private @type { BattlePart } */ #battlePart;
 	/** @private @type { DialoguePart } */ #dialoguePart;
 	/** @private @type { MapPart } */ #mapPart;
-	/** @private @type { MenuPart } */ #menuPart;
+	/** @private @type { MenuPartNode } */ #menuPart;
 	/** @private @type { DungeonPart } */ #dungeonPart;
 	/** @private @type { TitlePart } */ #titlePart;
 	/** @private @type { SavePart } */ #savePart;
@@ -152,7 +152,7 @@ export class TalesOfCultivation extends Scene {
 		this.#battlePart = new BattlePart();
 		this.#dialoguePart = new DialoguePart();
 		this.#mapPart = new MapPart();
-		this.#menuPart = new MenuPart();
+		this.#menuPart = new MenuPartNode();
 		this.#dungeonPart = new DungeonPart();
 		this.#titlePart = new TitlePart();
 		this.#savePart = new SavePart();

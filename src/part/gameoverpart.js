@@ -157,7 +157,7 @@ export class GameOverPart extends Object {
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { import("../../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
+	 * @param { InputManager } inputManager
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	tick(timeDelta, inputManager, popupRect) {
@@ -247,7 +247,7 @@ export class GameOverPart extends Object {
 	// 출력.
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
+	 * @param { Graphic } graphic
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	draw(graphic, popupRect) {

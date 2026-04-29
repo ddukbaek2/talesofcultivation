@@ -393,12 +393,12 @@ class TabButtonLayout extends Object {
 
 
 //==============================================================================
-// 메뉴 파트 (이전 PlayerPart). 비게임 UI 이므로 WorldNode 기반.
+// 메뉴 파트 노드 (이전 PlayerPart). 비게임 UI 이므로 WorldNode 기반.
 // - 상단 탭 (상태, 경지, 물품, 장비, 산패, 특성, 관계, 일지, 설정) 으로 보유 정보를 분류 표시.
 // - 외부에서 setProfile / setInventory / setOwnedCards / setAbilities / setRelations / setJournal 로 데이터 주입.
 // - 직접 조작은 탭 전환만 (편성 / 사용 등은 추후 GrowthPart 등 별도 파트에서).
 //==============================================================================
-export class MenuPart extends WorldNode {
+export class MenuPartNode extends WorldNode {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
@@ -431,6 +431,14 @@ export class MenuPart extends WorldNode {
 	/** @private @type { boolean } */ #settingsDragStartedInside;
 	/** @private @type { number } */ #pendingWheelDeltaY;
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #settingsViewportRect;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #popupRect;
+	/** @private @type { number } */ #contentLocalX;
+	/** @private @type { number } */ #contentLocalY;
+	/** @private @type { number } */ #contentWidth;
+	/** @private @type { number } */ #contentHeight;
+	/** @private @type { number } */ #tabBarLocalX;
+	/** @private @type { number } */ #tabBarLocalY;
+	/** @private @type { number } */ #tabBarWidth;
 
 	//==============================================================================
 	// 생성.
@@ -466,6 +474,14 @@ export class MenuPart extends WorldNode {
 		this.#settingsDragStartedInside = false;
 		this.#pendingWheelDeltaY = 0;
 		this.#settingsViewportRect = null;
+		this.#popupRect = null;
+		this.#contentLocalX = 0;
+		this.#contentLocalY = 0;
+		this.#contentWidth = 0;
+		this.#contentHeight = 0;
+		this.#tabBarLocalX = 0;
+		this.#tabBarLocalY = 0;
+		this.#tabBarWidth = 0;
 		this.installSampleData();
 		// 마우스 휠 입력은 InputManager 가 다루지 않으므로 직접 이벤트를 받아 누적한다.
 		// 누적된 양은 다음 tick 에서 settingsScrollY 에 반영 (설정 탭 활성화 시에만).
@@ -590,10 +606,12 @@ export class MenuPart extends WorldNode {
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { import("../../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
+	 * @param { InputManager } inputManager
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	tick(timeDelta, inputManager, popupRect) {
+		this.#popupRect = popupRect;
+		this.computeLayout(popupRect);
 		const isPressed = inputManager.isTouchPressed();
 		const isMoving = inputManager.isTouchMoved();
 		const viewInputPosition = inputManager.getViewInputPosition();
@@ -650,11 +668,28 @@ export class MenuPart extends WorldNode {
 			this.#pendingWheelDeltaY = 0;
 		}
 
-		// 클릭 처리 (드래그 시작이면 클릭으로 보지 않음 — handleClick 호출 전 설정 영역 안에서는 클릭만 한 경우에만 처리).
+		// 클릭 처리.
 		if (isPressed && !this.#wasTouchPressed) {
 			this.handleClick(viewInputPosition);
 		}
 		this.#wasTouchPressed = isPressed;
+	}
+
+	//==============================================================================
+	// 레이아웃 계산. tick 마다 popupRect 기준으로 각 영역 좌표를 멤버 변수에 저장.
+	//==============================================================================
+	/**
+	 * @param { { x: number, y: number, width: number, height: number } } popupRect
+	 */
+	computeLayout(popupRect) {
+		const tabBarLocalY = popupRect.y + HEADER_HEIGHT + HEADER_TO_TAB_GAP;
+		this.#tabBarLocalX = popupRect.x + SIDE_MARGIN;
+		this.#tabBarLocalY = tabBarLocalY;
+		this.#tabBarWidth = popupRect.width - SIDE_MARGIN * 2;
+		this.#contentLocalX = popupRect.x + SIDE_MARGIN;
+		this.#contentLocalY = tabBarLocalY + TAB_BAR_HEIGHT + TAB_TO_CONTENT_GAP;
+		this.#contentWidth = popupRect.width - SIDE_MARGIN * 2;
+		this.#contentHeight = popupRect.height - (this.#contentLocalY - popupRect.y) - FOOTER_HEIGHT - 16;
 	}
 
 	//==============================================================================
@@ -691,16 +726,13 @@ export class MenuPart extends WorldNode {
 						setting.isOn = !setting.isOn;
 						setting.valueLabel = setting.isOn ? "켬" : "끔";
 						this.persistToggleSetting(setting);
-						// 토글은 설정창 안에서 변경만 — 외부 콜백 호출하지 않음 (오버레이 유지).
 					}
 					else if (setting.cycleOptions.length > 0) {
 						setting.cycleIndex = (setting.cycleIndex + 1) % setting.cycleOptions.length;
 						setting.valueLabel = setting.cycleOptions[setting.cycleIndex];
 						this.persistCycleSetting(setting);
-						// 사이클도 설정창 유지.
 					}
 					else if (this.#onSettingActionInvoked) {
-						// 액션 항목(저장 / 불러오기 / 처음으로 등) 만 외부로 위임.
 						this.#onSettingActionInvoked(setting.key);
 					}
 					return;
@@ -757,7 +789,7 @@ export class MenuPart extends WorldNode {
 	// 출력.
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
+	 * @param { Graphic } graphic
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	draw(graphic, popupRect) {
@@ -767,21 +799,9 @@ export class MenuPart extends WorldNode {
 		canvasRenderingContext.fillStyle = "#0e1428";
 		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
 
-		// 헤더.
 		this.drawHeader(canvasRenderingContext, popupRect);
-
-		// 컨텐츠 영역 먼저 그린 뒤 탭 바를 위에 그린다 (탭이 컨텐츠에 의해 가려지지 않게).
-		const tabBarY = popupRect.y + HEADER_HEIGHT + HEADER_TO_TAB_GAP;
-		const contentX = popupRect.x + SIDE_MARGIN;
-		const contentY = tabBarY + TAB_BAR_HEIGHT + TAB_TO_CONTENT_GAP;
-		const contentWidth = popupRect.width - SIDE_MARGIN * 2;
-		const contentHeight = popupRect.height - (contentY - popupRect.y) - FOOTER_HEIGHT - 16;
-		this.drawActiveTab(canvasRenderingContext, contentX, contentY, contentWidth, contentHeight);
-
-		// 탭 바 (컨텐츠 위).
-		this.drawTabBar(canvasRenderingContext, popupRect.x + SIDE_MARGIN, tabBarY, popupRect.width - SIDE_MARGIN * 2);
-
-		// 푸터.
+		this.drawTabBar(canvasRenderingContext, this.#tabBarLocalX, this.#tabBarLocalY, this.#tabBarWidth);
+		this.drawActiveTab(canvasRenderingContext, this.#contentLocalX, this.#contentLocalY, this.#contentWidth, this.#contentHeight);
 		this.drawFooter(canvasRenderingContext, popupRect);
 	}
 
@@ -1454,14 +1474,12 @@ export class MenuPart extends WorldNode {
 		const nextRealmName = typeof this.#realmInfo.nextRealmName === "string" ? this.#realmInfo.nextRealmName : "";
 		const breakthroughHint = typeof this.#realmInfo.breakthroughHint === "string" ? this.#realmInfo.breakthroughHint : "";
 
-		// 현재 경지명.
 		canvasRenderingContext.fillStyle = "#ffffff";
 		canvasRenderingContext.font = "bold 22px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "top";
 		canvasRenderingContext.fillText(currentRealmName, innerX, innerY);
 
-		// 경지 설명 (자동 줄바꿈) — measureText 가 폰트에 영향받으므로 본문 폰트로 먼저 설정.
 		canvasRenderingContext.font = "14px GyeonggiBatang, sans-serif";
 		canvasRenderingContext.fillStyle = "#dddddd";
 		const descriptionLines = this.wrapTextByWidth(canvasRenderingContext, currentRealmDescription, width - 32);
@@ -1471,7 +1489,6 @@ export class MenuPart extends WorldNode {
 			canvasRenderingContext.fillText(descriptionLines[lineIndex], innerX, descriptionTopY + lineIndex * descriptionLineHeight);
 		}
 
-		// 다음 경지 + 돌파 조건 안내 (경지는 누적 진척이 아니라 이벤트로 돌파).
 		const nextRealmTopY = descriptionTopY + descriptionLines.length * descriptionLineHeight + 24;
 		canvasRenderingContext.fillStyle = "#ffcc88";
 		canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
@@ -1591,7 +1608,6 @@ export class MenuPart extends WorldNode {
 			this.#settingsScrollY = scrollMaxY;
 		}
 
-		// 클립 영역 안에서만 행 출력.
 		canvasRenderingContext.save();
 		canvasRenderingContext.beginPath();
 		canvasRenderingContext.rect(x + 4, listTopY, width - 8, viewportHeight);
@@ -1599,7 +1615,6 @@ export class MenuPart extends WorldNode {
 		for (let entryIndex = 0; entryIndex < this.#settings.length; ++entryIndex) {
 			const entry = this.#settings[entryIndex];
 			const rowY = listTopY + entryIndex * (LIST_ROW_HEIGHT + LIST_ROW_GAP) - this.#settingsScrollY;
-			// 컬링: 뷰포트 바깥 행은 그리지 않음.
 			if (rowY + LIST_ROW_HEIGHT < listTopY) {
 				continue;
 			}
@@ -1612,7 +1627,6 @@ export class MenuPart extends WorldNode {
 		}
 		canvasRenderingContext.restore();
 
-		// 스크롤바 (필요한 경우만).
 		if (scrollMaxY > 0) {
 			const trackX = x + width - SCROLL_BAR_WIDTH - 4;
 			const trackY = listTopY + 2;
@@ -1649,25 +1663,27 @@ export class MenuPart extends WorldNode {
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.strokeRect(x, y, width, height);
 
-		// 우측 명시적 컨트롤 버튼 영역 계산. 토글/사이클/액션 모두 동일한 박스 형태.
 		const controlButtonWidth = 96;
 		const controlButtonHeight = height - 16;
 		const controlButtonX = x + width - controlButtonWidth - 12;
 		const controlButtonY = y + (height - controlButtonHeight) * 0.5;
 
-		// 좌측: 라벨 + 설명 (드래그 영역, 컨트롤 버튼과 겹치지 않도록 폭 제한).
 		const textAreaWidth = controlButtonX - (x + 12) - 12;
+		const nameLineHeight = 20;
+		const descriptionLineHeight = 16;
+		const textGroupHeight = nameLineHeight + 4 + descriptionLineHeight;
+		const textGroupTopY = y + System.Math.floor((height - textGroupHeight) * 0.5);
 		canvasRenderingContext.fillStyle = "#ffffff";
 		canvasRenderingContext.font = "bold 15px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "top";
-		canvasRenderingContext.fillText(entry.name, x + 12, y + 8);
+		canvasRenderingContext.fillText(entry.name, x + 12, textGroupTopY);
 
 		canvasRenderingContext.fillStyle = "#aaaabb";
 		canvasRenderingContext.font = "12px GyeonggiBatang, sans-serif";
-		canvasRenderingContext.fillText(this.clampTextToWidth(canvasRenderingContext, entry.description, textAreaWidth), x + 12, y + 30);
+		const clampedDescriptionText = this.clampTextToWidth(canvasRenderingContext, entry.description, textAreaWidth);
+		canvasRenderingContext.fillText(clampedDescriptionText, x + 12, textGroupTopY + nameLineHeight + 4);
 
-		// 우측 컨트롤 버튼 (토글이면 ON/OFF 색, 사이클이면 골드, 액션이면 골드).
 		const buttonValueText = entry.valueLabel && entry.valueLabel.length > 0 ? entry.valueLabel : (entry.isToggle ? (entry.isOn ? "켬" : "끔") : "실행");
 		const buttonBackgroundColor = entry.isToggle ? (entry.isOn ? "#1e3a25" : "#3a1e1e") : "#2a2a40";
 		const buttonBorderColor = entry.isToggle ? (entry.isOn ? "#88dd88" : "#dd6666") : "#d4b46a";
@@ -1827,7 +1843,7 @@ export class MenuPart extends WorldNode {
 	}
 
 	//==============================================================================
-	// 설정 탭 뷰포트(스크롤 가능 컨텐츠 영역) 안인지. 마지막으로 그린 viewport rect 기준으로 판정.
+	// 설정 탭 뷰포트(스크롤 가능 컨텐츠 영역) 안인지.
 	//==============================================================================
 	/**
 	 * @param { { x: number, y: number } } viewInputPosition

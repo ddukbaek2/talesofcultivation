@@ -1493,7 +1493,7 @@ export class BattlePart extends Object {
 	// - endTurn / abandon: 행동 종료 / 전투 포기 (버튼과 동일 효과).
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
+	 * @param { InputManager } inputManager
 	 */
 	handleNonTouchActions(inputManager) {
 		if (this.#currentSide !== PlayerSide.player) {
@@ -1585,7 +1585,7 @@ export class BattlePart extends Object {
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { import("../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
+	 * @param { InputManager } inputManager
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	tick(timeDelta, inputManager, popupRect) {
@@ -1773,7 +1773,7 @@ export class BattlePart extends Object {
 	// 출력.
 	//==============================================================================
 	/**
-	 * @param { import("../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
+	 * @param { Graphic } graphic
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	draw(graphic, popupRect) {
@@ -3027,7 +3027,7 @@ export class BattlePart extends Object {
 	// - 슬롯 위치는 draw() 에서 매 프레임 갱신되는 *SlotCenter 필드를 사용해 사각형으로 환원.
 	//==============================================================================
 	/**
-	 * @param { import("../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
+	 * @param { Vector2 } viewInputPosition
 	 * @returns { boolean }
 	 */
 	tryOpenPileViewBySlotHit(viewInputPosition) {
@@ -3249,7 +3249,7 @@ export class BattlePart extends Object {
 	// 손패 카드 hit test. 우측 카드가 위에 있으므로 인덱스 큰 쪽부터.
 	//==============================================================================
 	/**
-	 * @param { import("../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
+	 * @param { Vector2 } viewInputPosition
 	 * @returns { number }
 	 */
 	findHandCardIndexAtPosition(viewInputPosition) {
@@ -3266,7 +3266,7 @@ export class BattlePart extends Object {
 	// 회전/스케일 적용된 카드 안에 좌표가 있는지.
 	//==============================================================================
 	/**
-	 * @param { import("../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
+	 * @param { Vector2 } viewInputPosition
 	 * @param { { centerX: number, centerY: number, rotation: number, scale: number } } layoutEntry
 	 * @returns { boolean }
 	 */
@@ -3286,7 +3286,7 @@ export class BattlePart extends Object {
 	// 좌표가 사각 영역 내부인지.
 	//==============================================================================
 	/**
-	 * @param { import("../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
+	 * @param { Vector2 } viewInputPosition
 	 * @param { { x: number, y: number, width: number, height: number } } rect
 	 * @returns { boolean }
 	 */
@@ -3300,7 +3300,7 @@ export class BattlePart extends Object {
 	// 버프 layout 배열 안에서 hit. 없으면 null.
 	//==============================================================================
 	/**
-	 * @param { import("../libs/vanilla.js/src/base/vector2.js").Vector2 } viewInputPosition
+	 * @param { Vector2 } viewInputPosition
 	 * @param { Array<{ buff: { id: string, value: number }, x: number, y: number, width: number, height: number }> } buffLayouts
 	 * @returns { { buff: { id: string, value: number }, x: number, y: number, width: number, height: number } | null }
 	 */

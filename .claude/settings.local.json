@@ -24,7 +24,10 @@
       "Bash(git -C D:/Github/talesofcultivation -C libs/vanilla.js log --all --oneline)",
       "Bash(git -C D:/Github/talesofcultivation/libs/vanilla.js show --stat 5f35413)",
       "Bash(git -C D:/Github/talesofcultivation/libs/vanilla.js show 5f35413)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git mv *)",
+      "Bash(date /t)",
+      "Bash(time /t)"
     ]
   }
 }

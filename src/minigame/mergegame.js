@@ -159,7 +159,7 @@ export class MergeGame {
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { import("../../libs/vanilla.js/src/core/inputmanager.js").InputManager } inputManager
+	 * @param { InputManager } inputManager
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	tick(timeDelta, inputManager, popupRect) {
@@ -246,7 +246,7 @@ export class MergeGame {
 	// 출력. 팝업 박스는 호출자가 그려주므로 여기서는 내용물만 그린다.
 	//==============================================================================
 	/**
-	 * @param { import("../../libs/vanilla.js/src/core/graphic.js").Graphic } graphic
+	 * @param { Graphic } graphic
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	draw(graphic, popupRect) {
