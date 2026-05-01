@@ -180,6 +180,28 @@
 		]
 	},
 	{
+		"id": 11000013,
+		"displayName": "연속베기",
+		"description": "검을 연달아 휘둘러 3의 피해를 두 번 가한다",
+		"color": "#aa4455",
+		"isSpecial": false,
+		"grade": 1,
+		"cost": 1,
+		"sect": 10000001,
+		"element": "metal",
+		"cardType": "attack",
+		"effects": [
+			{
+				"type": "damage",
+				"value": 3
+			},
+			{
+				"type": "damage",
+				"value": 3
+			}
+		]
+	},
+	{
 		"id": 12000001,
 		"displayName": "강타",
 		"description": "검을 강하게 휘둘러 8의 피해를 입힌다",

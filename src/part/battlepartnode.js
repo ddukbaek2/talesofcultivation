@@ -3,6 +3,7 @@
 //==============================================================================
 const System = globalThis;
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
+import { WorldNode } from "../../libs/vanilla.js/src/core/node/worldnode.js";
 import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 import { isActionPressed, getActiveInputMode, drawInputHintBadge, InputAction, InputMode } from "../base/inputhint.js";
 import { getHandFanAnglePerCardDegrees, getHandSpacingMultiplier } from "../base/usersettings.js";
@@ -288,7 +289,7 @@ class PlayerState extends Object {
 //==============================================================================
 // 전투 파트 (BattlePart). 카드 배틀 진행 + 영력/버프/덱/무덤 관리.
 //==============================================================================
-export class BattlePart extends Object {
+export class BattlePartNode extends WorldNode {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
@@ -343,6 +344,8 @@ export class BattlePart extends Object {
 	/** @private @type { (() => void) | null } */ #onPlayerDefeated;
 	/** @private @type { (() => void) | null } */ #onPlayerVictory;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
+	/** @private @type { InputManager | null } */ #inputManager;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #popupRect;
 
 	//==============================================================================
 	// 생성.
@@ -400,6 +403,8 @@ export class BattlePart extends Object {
 		this.#onPlayerDefeated = null;
 		this.#onPlayerVictory = null;
 		this.#audioBeepPlayer = null;
+		this.#inputManager = null;
+		this.#popupRect = null;
 	}
 
 	//==============================================================================
@@ -1581,14 +1586,28 @@ export class BattlePart extends Object {
 	}
 
 	//==============================================================================
+	// 입력 컨텍스트 주입 (매 프레임 tick 전에 호출).
+	//==============================================================================
+	/**
+	 * @param { InputManager | null } inputManager
+	 * @param { { x: number, y: number, width: number, height: number } | null } popupRect
+	 */
+	setInputContext(inputManager, popupRect) {
+		this.#inputManager = inputManager;
+		this.#popupRect = popupRect;
+	}
+
+	//==============================================================================
 	// 갱신.
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { InputManager } inputManager
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	tick(timeDelta, inputManager, popupRect) {
+	tick(timeDelta) {
+		if (!this.isActive()) { return; }
+		const inputManager = this.#inputManager;
+		const popupRect = this.#popupRect;
+		if (!inputManager || !popupRect) { return; }
 		this.tickAnimations(timeDelta);
 
 		if (this.#endGameMessage !== "") {
@@ -1774,9 +1793,11 @@ export class BattlePart extends Object {
 	//==============================================================================
 	/**
 	 * @param { Graphic } graphic
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	draw(graphic, popupRect) {
+	draw(graphic) {
+		if (!this.isActive()) { return; }
+		const popupRect = this.#popupRect;
+		if (!popupRect) { return; }
 		const canvasRenderingContext = graphic.getCanvasRenderingContext();
 		const popupCenterX = popupRect.x + popupRect.width * 0.5;
 		const popupCenterY = popupRect.y + popupRect.height * 0.5;

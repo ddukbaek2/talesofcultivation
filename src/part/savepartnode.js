@@ -97,7 +97,7 @@ class SaveSlotLayout extends Object {
 // - 우상단 X 버튼으로 닫기. cancel 액션도 닫기 (onClose 콜백).
 // - 메뉴 위에 별도 레이어로 떠 있는 형태 (메뉴는 닫지 않고 그 위에 표시).
 //==============================================================================
-export class SavePart extends WorldNode {
+export class SavePartNode extends WorldNode {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
@@ -110,6 +110,8 @@ export class SavePart extends WorldNode {
 	/** @private @type { ((SaveSlot, string) => void) | null } */ #onSlotSelected;
 	/** @private @type { (() => void) | null } */ #onClose;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
+	/** @private @type { InputManager | null } */ #inputManager;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #popupRect;
 
 	//==============================================================================
 	// 생성.
@@ -125,6 +127,8 @@ export class SavePart extends WorldNode {
 		this.#onSlotSelected = null;
 		this.#onClose = null;
 		this.#audioBeepPlayer = null;
+		this.#inputManager = null;
+		this.#popupRect = null;
 		this.installSampleSlots();
 	}
 
@@ -162,6 +166,18 @@ export class SavePart extends WorldNode {
 	}
 
 	//==============================================================================
+	// 입력 컨텍스트 주입 (매 프레임 tick 전에 호출).
+	//==============================================================================
+	/**
+	 * @param { InputManager | null } inputManager
+	 * @param { { x: number, y: number, width: number, height: number } | null } popupRect
+	 */
+	setInputContext(inputManager, popupRect) {
+		this.#inputManager = inputManager;
+		this.#popupRect = popupRect;
+	}
+
+	//==============================================================================
 	// 활성화 시 입력 누름 상태 리셋.
 	//==============================================================================
 	reset() {
@@ -173,11 +189,18 @@ export class SavePart extends WorldNode {
 	// 갱신.
 	//==============================================================================
 	/**
+	 * @override
 	 * @param { number } timeDelta
-	 * @param { InputManager } inputManager
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	tick(timeDelta, inputManager, popupRect) {
+	tick(timeDelta) {
+		if (!this.isActive()) {
+			return;
+		}
+		const inputManager = this.#inputManager;
+		const popupRect = this.#popupRect;
+		if (!inputManager || !popupRect) {
+			return;
+		}
 		const isPressed = inputManager.isTouchPressed();
 		if (isPressed && !this.#wasTouchPressed) {
 			const viewInputPosition = inputManager.getViewInputPosition();
@@ -232,11 +255,22 @@ export class SavePart extends WorldNode {
 	// 출력.
 	//==============================================================================
 	/**
+	 * @override
 	 * @param { Graphic } graphic
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	draw(graphic, popupRect) {
+	draw(graphic) {
+		if (!this.isActive()) {
+			return;
+		}
+		const popupRect = this.#popupRect;
+		if (!popupRect) {
+			return;
+		}
 		const canvasRenderingContext = graphic.getCanvasRenderingContext();
+
+		// 오버레이 딤드 (기저 파트를 어둡게).
+		canvasRenderingContext.fillStyle = "rgba(0, 0, 0, 0.55)";
+		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
 
 		// 배경.
 		canvasRenderingContext.fillStyle = "#0a0e1c";

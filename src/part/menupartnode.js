@@ -431,6 +431,7 @@ export class MenuPartNode extends WorldNode {
 	/** @private @type { boolean } */ #settingsDragStartedInside;
 	/** @private @type { number } */ #pendingWheelDeltaY;
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #settingsViewportRect;
+	/** @private @type { InputManager | null } */ #inputManager;
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #popupRect;
 	/** @private @type { number } */ #contentLocalX;
 	/** @private @type { number } */ #contentLocalY;
@@ -474,6 +475,7 @@ export class MenuPartNode extends WorldNode {
 		this.#settingsDragStartedInside = false;
 		this.#pendingWheelDeltaY = 0;
 		this.#settingsViewportRect = null;
+		this.#inputManager = null;
 		this.#popupRect = null;
 		this.#contentLocalX = 0;
 		this.#contentLocalY = 0;
@@ -602,15 +604,28 @@ export class MenuPartNode extends WorldNode {
 	}
 
 	//==============================================================================
+	// 입력 컨텍스트 주입 (매 프레임 tick 전에 호출).
+	//==============================================================================
+	/**
+	 * @param { InputManager | null } inputManager
+	 * @param { { x: number, y: number, width: number, height: number } | null } popupRect
+	 */
+	setInputContext(inputManager, popupRect) {
+		this.#inputManager = inputManager;
+		this.#popupRect = popupRect;
+	}
+
+	//==============================================================================
 	// 갱신.
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { InputManager } inputManager
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	tick(timeDelta, inputManager, popupRect) {
-		this.#popupRect = popupRect;
+	tick(timeDelta) {
+		if (!this.isActive()) { return; }
+		const inputManager = this.#inputManager;
+		const popupRect = this.#popupRect;
+		if (!inputManager || !popupRect) { return; }
 		this.computeLayout(popupRect);
 		const isPressed = inputManager.isTouchPressed();
 		const isMoving = inputManager.isTouchMoved();
@@ -689,7 +704,7 @@ export class MenuPartNode extends WorldNode {
 		this.#contentLocalX = popupRect.x + SIDE_MARGIN;
 		this.#contentLocalY = tabBarLocalY + TAB_BAR_HEIGHT + TAB_TO_CONTENT_GAP;
 		this.#contentWidth = popupRect.width - SIDE_MARGIN * 2;
-		this.#contentHeight = popupRect.height - (this.#contentLocalY - popupRect.y) - FOOTER_HEIGHT - 16;
+		this.#contentHeight = popupRect.height - (this.#contentLocalY - popupRect.y) - 16;
 	}
 
 	//==============================================================================
@@ -790,10 +805,16 @@ export class MenuPartNode extends WorldNode {
 	//==============================================================================
 	/**
 	 * @param { Graphic } graphic
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	draw(graphic, popupRect) {
+	draw(graphic) {
+		if (!this.isActive()) { return; }
+		const popupRect = this.#popupRect;
+		if (!popupRect) { return; }
 		const canvasRenderingContext = graphic.getCanvasRenderingContext();
+
+		// 오버레이 딤드 (기저 파트를 어둡게).
+		canvasRenderingContext.fillStyle = "rgba(0, 0, 0, 0.55)";
+		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
 
 		// 배경.
 		canvasRenderingContext.fillStyle = "#0e1428";
@@ -802,7 +823,6 @@ export class MenuPartNode extends WorldNode {
 		this.drawHeader(canvasRenderingContext, popupRect);
 		this.drawTabBar(canvasRenderingContext, this.#tabBarLocalX, this.#tabBarLocalY, this.#tabBarWidth);
 		this.drawActiveTab(canvasRenderingContext, this.#contentLocalX, this.#contentLocalY, this.#contentWidth, this.#contentHeight);
-		this.drawFooter(canvasRenderingContext, popupRect);
 	}
 
 	//==============================================================================
@@ -1743,11 +1763,6 @@ export class MenuPartNode extends WorldNode {
 	 * @param { string } label
 	 */
 	drawListHeader(canvasRenderingContext, x, y, width, label) {
-		canvasRenderingContext.fillStyle = "#cccccc";
-		canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
-		canvasRenderingContext.textAlign = "left";
-		canvasRenderingContext.textBaseline = "top";
-		canvasRenderingContext.fillText(label, x + 12, y + 10);
 	}
 
 	//==============================================================================

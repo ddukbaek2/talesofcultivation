@@ -2,9 +2,12 @@
 // 포함 모듈 목록.
 //==============================================================================
 const System = globalThis;
+import { WorldNode } from "../../libs/vanilla.js/src/core/node/worldnode.js";
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
 import { AudioBeepPlayer, BeepWaveform } from "../base/audiobeepplayer.js";
 import { isActionPressed, InputAction } from "../base/inputhint.js";
+import { MountainSceneryNode } from "../base/mountainscenerynode.js";
+import { SwordSectElderNode } from "../base/swordsecteldernode.js";
 
 
 //==============================================================================
@@ -60,7 +63,7 @@ class DialogueLine extends Object {
 // - 누르면 진행 (타이핑 중이면 즉시 완성, 완성 상태면 다음 대사).
 // - 마지막 대사 이후 한 번 더 누르면 isFinished = true.
 //==============================================================================
-export class DialoguePart extends Object {
+export class DialoguePartNode extends WorldNode {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
@@ -75,6 +78,10 @@ export class DialoguePart extends Object {
 	/** @private @type { boolean } */ #hasReceivedFirstInput;
 	/** @private @type { number } */ #elapsedTime;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
+	/** @private @type { InputManager | null } */ #inputManager;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #popupRect;
+	/** @private @type { MountainSceneryNode } */ #mountainSceneryNode;
+	/** @private @type { SwordSectElderNode } */ #swordSectElderNode;
 
 	//==============================================================================
 	// 생성.
@@ -92,6 +99,10 @@ export class DialoguePart extends Object {
 		this.#hasReceivedFirstInput = false;
 		this.#elapsedTime = 0;
 		this.#audioBeepPlayer = null;
+		this.#inputManager = null;
+		this.#popupRect = null;
+		this.#mountainSceneryNode = new MountainSceneryNode();
+		this.#swordSectElderNode = new SwordSectElderNode();
 	}
 
 	//==============================================================================
@@ -140,6 +151,36 @@ export class DialoguePart extends Object {
 	}
 
 	//==============================================================================
+	// 입력 컨텍스트 주입 (매 프레임 tick 전에 호출).
+	//==============================================================================
+	/**
+	 * @param { InputManager | null } inputManager
+	 * @param { { x: number, y: number, width: number, height: number } | null } popupRect
+	 */
+	setInputContext(inputManager, popupRect) {
+		this.#inputManager = inputManager;
+		this.#popupRect = popupRect;
+	}
+
+	//==============================================================================
+	// 시간대 설정 — "day" 면 산 배경과 캐릭터 모두 낮 프리셋, 그 외(예: "night")면 밤 프리셋.
+	// 두 노드의 톤을 한 번에 일관되게 맞추기 위한 편의 메서드.
+	//==============================================================================
+	/**
+	 * @param { string } timeOfDay
+	 */
+	setTimeOfDay(timeOfDay) {
+		if (timeOfDay === "day") {
+			this.#mountainSceneryNode.applyDayPreset();
+			this.#swordSectElderNode.applyDayPreset();
+		}
+		else {
+			this.#mountainSceneryNode.applyNightPreset();
+			this.#swordSectElderNode.applyNightPreset();
+		}
+	}
+
+	//==============================================================================
 	// 처음으로 (현재 장면을 다시 처음부터). 장면이 비어 있으면 즉시 종료 상태.
 	//==============================================================================
 	reset() {
@@ -181,11 +222,17 @@ export class DialoguePart extends Object {
 	// 갱신.
 	//==============================================================================
 	/**
+	 * @override
 	 * @param { number } timeDelta
-	 * @param { InputManager } inputManager
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	tick(timeDelta, inputManager, popupRect) {
+	tick(timeDelta) {
+		if (!this.isActive()) {
+			return;
+		}
+		const inputManager = this.#inputManager;
+		if (!inputManager) {
+			return;
+		}
 		this.#elapsedTime += timeDelta;
 		if (this.#isFinished) {
 			return;
@@ -298,16 +345,23 @@ export class DialoguePart extends Object {
 	// 출력.
 	//==============================================================================
 	/**
+	 * @override
 	 * @param { Graphic } graphic
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	draw(graphic, popupRect) {
+	draw(graphic) {
+		if (!this.isActive()) {
+			return;
+		}
+		const popupRect = this.#popupRect;
+		if (!popupRect) {
+			return;
+		}
 		const canvasRenderingContext = graphic.getCanvasRenderingContext();
 		const popupCenterX = popupRect.x + popupRect.width * 0.5;
 
-		// 배경 (어두운 그라데이션 느낌으로 단색).
-		canvasRenderingContext.fillStyle = "#0a0a14";
-		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
+		// 산 배경 (밤하늘 + 달 + 3겹 산 실루엣).
+		this.#mountainSceneryNode.setRect(popupRect);
+		this.#mountainSceneryNode.draw(graphic);
 
 		// 가운데 위쪽에 장면 타이틀 (가라).
 		canvasRenderingContext.fillStyle = "#cccccc";
@@ -327,6 +381,30 @@ export class DialoguePart extends Object {
 		const textBoxX = popupRect.x + SIDE_MARGIN;
 		const textBoxY = popupRect.y + popupRect.height - TEXTBOX_HEIGHT - TEXTBOX_BOTTOM_MARGIN;
 		const textBoxWidth = popupRect.width - SIDE_MARGIN * 2;
+
+		// 화자가 검종 장로일 때 Reigns 풍으로 배경 위에 캐릭터 실루엣을 직접 표시.
+		// 카드 프레임 없이 텍스트 박스 바로 위까지 꽉 차게 배치.
+		if (currentDialogue.speaker === "검종 장로") {
+			const elderTopY = popupRect.y + 48;
+			const elderBottomY = textBoxY - 28;
+			const elderAvailableHeight = elderBottomY - elderTopY;
+			const elderAspectRatio = 0.72;
+			const elderMaxWidth = popupRect.width * 0.55;
+			const elderWidthByHeight = elderAvailableHeight * elderAspectRatio;
+			const elderWidth = System.Math.min(elderMaxWidth, elderWidthByHeight);
+			const elderHeight = elderWidth / elderAspectRatio;
+			const elderX = popupCenterX - elderWidth * 0.5;
+			const elderY = elderBottomY - elderHeight;
+			const elderRect = {
+				x: elderX,
+				y: elderY,
+				width: elderWidth,
+				height: elderHeight,
+			};
+			this.#swordSectElderNode.setRect(elderRect);
+			this.#swordSectElderNode.draw(graphic);
+		}
+
 		canvasRenderingContext.fillStyle = "rgba(20, 20, 30, 0.92)";
 		canvasRenderingContext.fillRect(textBoxX, textBoxY, textBoxWidth, TEXTBOX_HEIGHT);
 		canvasRenderingContext.strokeStyle = "#d4b46a";

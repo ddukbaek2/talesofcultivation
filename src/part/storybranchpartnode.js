@@ -2,9 +2,11 @@
 // 포함 모듈 목록.
 //==============================================================================
 const System = globalThis;
+import { WorldNode } from "../../libs/vanilla.js/src/core/node/worldnode.js";
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
 import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 import { drawInputHintBadge, isActionPressed, InputAction } from "../base/inputhint.js";
+import { branchTable } from "../table/branchtabledata.js";
 
 
 //==============================================================================
@@ -29,8 +31,7 @@ const SCROLL_KEYBOARD_SPEED = 320;
 // 분기 씬 진행 상태.
 //==============================================================================
 const StorySceneStatus = System.Object.freeze({
-	locked: "locked",
-	available: "available",
+	unvisited: "unvisited",
 	visited: "visited",
 	current: "current",
 });
@@ -106,7 +107,7 @@ class StorySceneNodeLayout extends Object {
 // - 노드 간 연결선 (현 노드의 nextSceneIds 가 가리키는 다음 노드들).
 // - 단축키 T 로 토글 — 외부 매니저가 활성/비활성 처리.
 //==============================================================================
-export class StoryBranchPart extends Object {
+export class BranchPartNode extends WorldNode {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
@@ -116,17 +117,22 @@ export class StoryBranchPart extends Object {
 	/** @private @type { boolean } */ #wasTouchPressed;
 	/** @private @type { boolean } */ #wasCancelActionPressed;
 	/** @private @type { boolean } */ #wasConfirmActionPressed;
-	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #closeButtonRect;
 	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #visitButtonRect;
 	/** @private @type { (() => void) | null } */ #onClose;
 	/** @private @type { ((StoryScene) => void) | null } */ #onSceneVisited;
+	/** @private @type { number } */ #scrollX;
 	/** @private @type { number } */ #scrollY;
+	/** @private @type { number } */ #lastScrollMaxX;
 	/** @private @type { number } */ #lastScrollMaxY;
+	/** @private @type { number } */ #lastGraphAreaWidth;
 	/** @private @type { number } */ #lastGraphAreaHeight;
+	/** @private @type { number } */ #lastGraphContentWidth;
 	/** @private @type { number } */ #lastGraphContentHeight;
 	/** @private @type { { x: number, y: number } | null } */ #dragLastPosition;
 	/** @private @type { number } */ #pendingWheelDeltaY;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
+	/** @private @type { InputManager | null } */ #inputManager;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #popupRect;
 
 	//==============================================================================
 	// 생성.
@@ -139,17 +145,22 @@ export class StoryBranchPart extends Object {
 		this.#wasTouchPressed = false;
 		this.#wasCancelActionPressed = false;
 		this.#wasConfirmActionPressed = false;
-		this.#closeButtonRect = null;
 		this.#visitButtonRect = null;
 		this.#onClose = null;
 		this.#onSceneVisited = null;
+		this.#scrollX = 0;
 		this.#scrollY = 0;
+		this.#lastScrollMaxX = 0;
 		this.#lastScrollMaxY = 0;
+		this.#lastGraphAreaWidth = 0;
 		this.#lastGraphAreaHeight = 0;
+		this.#lastGraphContentWidth = 0;
 		this.#lastGraphContentHeight = 0;
 		this.#dragLastPosition = null;
 		this.#pendingWheelDeltaY = 0;
 		this.#audioBeepPlayer = null;
+		this.#inputManager = null;
+		this.#popupRect = null;
 		this.installSampleScenes();
 		// 마우스 휠 입력은 InputManager 가 다루지 않으므로 직접 이벤트를 받아 누적한다.
 		// 누적된 양은 다음 tick 에서 scrollY 에 반영.
@@ -185,6 +196,18 @@ export class StoryBranchPart extends Object {
 	}
 
 	//==============================================================================
+	// 입력 컨텍스트 주입 (매 프레임 tick 전에 호출).
+	//==============================================================================
+	/**
+	 * @param { InputManager | null } inputManager
+	 * @param { { x: number, y: number, width: number, height: number } | null } popupRect
+	 */
+	setInputContext(inputManager, popupRect) {
+		this.#inputManager = inputManager;
+		this.#popupRect = popupRect;
+	}
+
+	//==============================================================================
 	// 활성화 시 입력 누름 상태 리셋.
 	//==============================================================================
 	reset() {
@@ -197,11 +220,18 @@ export class StoryBranchPart extends Object {
 	// 갱신.
 	//==============================================================================
 	/**
+	 * @override
 	 * @param { number } timeDelta
-	 * @param { InputManager } inputManager
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	tick(timeDelta, inputManager, popupRect) {
+	tick(timeDelta) {
+		if (!this.isActive()) {
+			return;
+		}
+		const inputManager = this.#inputManager;
+		const popupRect = this.#popupRect;
+		if (!inputManager || !popupRect) {
+			return;
+		}
 		const isPressed = inputManager.isTouchPressed();
 		const isMoving = inputManager.isTouchMoved();
 		const viewInputPosition = inputManager.getViewInputPosition();
@@ -213,7 +243,9 @@ export class StoryBranchPart extends Object {
 			this.#dragLastPosition = { x: viewInputPosition.x, y: viewInputPosition.y };
 		}
 		else if (isMoving && this.#dragLastPosition !== null) {
+			const dragDeltaX = viewInputPosition.x - this.#dragLastPosition.x;
 			const dragDeltaY = viewInputPosition.y - this.#dragLastPosition.y;
+			this.#scrollX -= dragDeltaX;
 			this.#scrollY -= dragDeltaY;
 			this.#dragLastPosition = { x: viewInputPosition.x, y: viewInputPosition.y };
 		}
@@ -228,15 +260,27 @@ export class StoryBranchPart extends Object {
 			this.#pendingWheelDeltaY = 0;
 		}
 
-		// 키보드 ↑↓ 로 스크롤.
+		// 키보드 방향키로 스크롤.
 		if (inputManager.isKeyPressed("ArrowUp")) {
 			this.#scrollY -= SCROLL_KEYBOARD_SPEED * timeDelta;
 		}
 		if (inputManager.isKeyPressed("ArrowDown")) {
 			this.#scrollY += SCROLL_KEYBOARD_SPEED * timeDelta;
 		}
+		if (inputManager.isKeyPressed("ArrowLeft")) {
+			this.#scrollX -= SCROLL_KEYBOARD_SPEED * timeDelta;
+		}
+		if (inputManager.isKeyPressed("ArrowRight")) {
+			this.#scrollX += SCROLL_KEYBOARD_SPEED * timeDelta;
+		}
 
 		// 스크롤 범위 클램프.
+		if (this.#scrollX < 0) {
+			this.#scrollX = 0;
+		}
+		if (this.#scrollX > this.#lastScrollMaxX) {
+			this.#scrollX = this.#lastScrollMaxX;
+		}
 		if (this.#scrollY < 0) {
 			this.#scrollY = 0;
 		}
@@ -265,7 +309,7 @@ export class StoryBranchPart extends Object {
 		if (selectedScene === null) {
 			return;
 		}
-		if (selectedScene.status === StorySceneStatus.locked) {
+		if (selectedScene.status === StorySceneStatus.current) {
 			return;
 		}
 		const visitAudioBeepPlayer = this.getAudioBeepPlayer();
@@ -284,17 +328,6 @@ export class StoryBranchPart extends Object {
 	 * @param { { x: number, y: number } } viewInputPosition
 	 */
 	handleClick(viewInputPosition) {
-		// 닫기 버튼.
-		if (this.#closeButtonRect && this.isInsideRect(viewInputPosition, this.#closeButtonRect.x, this.#closeButtonRect.y, this.#closeButtonRect.width, this.#closeButtonRect.height)) {
-			const closeAudioBeepPlayer = this.getAudioBeepPlayer();
-			if (closeAudioBeepPlayer) {
-				closeAudioBeepPlayer.playCancel();
-			}
-			if (this.#onClose) {
-				this.#onClose();
-			}
-			return;
-		}
 		// 이동 버튼.
 		if (this.#visitButtonRect && this.isInsideRect(viewInputPosition, this.#visitButtonRect.x, this.#visitButtonRect.y, this.#visitButtonRect.width, this.#visitButtonRect.height)) {
 			this.tryVisitSelectedScene();
@@ -316,28 +349,35 @@ export class StoryBranchPart extends Object {
 	// 출력.
 	//==============================================================================
 	/**
+	 * @override
 	 * @param { Graphic } graphic
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	draw(graphic, popupRect) {
+	draw(graphic) {
+		if (!this.isActive()) {
+			return;
+		}
+		const popupRect = this.#popupRect;
+		if (!popupRect) {
+			return;
+		}
 		const canvasRenderingContext = graphic.getCanvasRenderingContext();
 
 		canvasRenderingContext.fillStyle = "#0a0e1c";
 		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, popupRect.height);
 
 		this.drawHeader(canvasRenderingContext, popupRect);
+		this.drawFooterProgress(canvasRenderingContext, popupRect);
 
 		// 컨텐츠 영역 (그래프 + 우측 상세).
 		const contentX = popupRect.x + SIDE_MARGIN;
 		const contentY = popupRect.y + HEADER_HEIGHT + HEADER_TO_CONTENT_GAP;
 		const contentWidth = popupRect.width - SIDE_MARGIN * 2;
-		const contentHeight = popupRect.height - (contentY - popupRect.y) - FOOTER_HEIGHT - 16;
+		const contentHeight = popupRect.height - (contentY - popupRect.y) - FOOTER_HEIGHT - 8;
 		const detailWidth = 300;
 		const graphAreaWidth = contentWidth - detailWidth - 20;
 
 		this.drawSceneGraph(canvasRenderingContext, contentX, contentY, graphAreaWidth, contentHeight);
 		this.drawSceneDetail(canvasRenderingContext, contentX + graphAreaWidth + 20, contentY, detailWidth, contentHeight);
-		this.drawFooter(canvasRenderingContext, popupRect);
 	}
 
 	//==============================================================================
@@ -348,8 +388,6 @@ export class StoryBranchPart extends Object {
 	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
 	drawHeader(canvasRenderingContext, popupRect) {
-		const headerRightInset = 140;
-		const headerBarWidth = popupRect.width - headerRightInset;
 		canvasRenderingContext.fillStyle = "#1a2240";
 		canvasRenderingContext.fillRect(popupRect.x, popupRect.y, popupRect.width, HEADER_HEIGHT);
 		canvasRenderingContext.strokeStyle = "#d4b46a";
@@ -364,35 +402,36 @@ export class StoryBranchPart extends Object {
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "middle";
 		canvasRenderingContext.fillText("분기점", popupRect.x + SIDE_MARGIN, popupRect.y + HEADER_HEIGHT * 0.5);
+	}
 
-		// 우측: 닫기(X) 버튼 + 진척도 (방문한 씬 수 / 전체).
-		// 글로벌 메뉴/입력 아이콘이 우상단(140px) 을 차지하므로 그 안쪽에 배치.
-		const closeSize = 32;
-		const closeX = popupRect.x + popupRect.width - headerRightInset - SIDE_MARGIN - closeSize;
-		const closeY = popupRect.y + (HEADER_HEIGHT - closeSize) * 0.5;
-		this.#closeButtonRect = { x: closeX, y: closeY, width: closeSize, height: closeSize };
-		canvasRenderingContext.fillStyle = "#993333";
-		canvasRenderingContext.fillRect(closeX, closeY, closeSize, closeSize);
-		canvasRenderingContext.strokeStyle = "#ffffff";
-		canvasRenderingContext.lineWidth = 1;
-		canvasRenderingContext.strokeRect(closeX, closeY, closeSize, closeSize);
-		canvasRenderingContext.fillStyle = "#ffffff";
-		canvasRenderingContext.font = "bold 18px GyeonggiBatangBold, sans-serif";
-		canvasRenderingContext.textAlign = "center";
-		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText("X", closeX + closeSize * 0.5, closeY + closeSize * 0.5);
-
+	//==============================================================================
+	// 하단 진척도 바.
+	//==============================================================================
+	/**
+	 * @param { CanvasRenderingContext2D } canvasRenderingContext
+	 * @param { { x: number, y: number, width: number, height: number } } popupRect
+	 */
+	drawFooterProgress(canvasRenderingContext, popupRect) {
 		let visitedCount = 0;
 		for (const scene of this.#scenes) {
 			if (scene.status === StorySceneStatus.visited || scene.status === StorySceneStatus.current) {
 				++visitedCount;
 			}
 		}
+		const footerY = popupRect.y + popupRect.height - FOOTER_HEIGHT;
+		canvasRenderingContext.fillStyle = "#1a2240";
+		canvasRenderingContext.fillRect(popupRect.x, footerY, popupRect.width, FOOTER_HEIGHT);
+		canvasRenderingContext.strokeStyle = "#d4b46a";
+		canvasRenderingContext.lineWidth = 1;
+		canvasRenderingContext.beginPath();
+		canvasRenderingContext.moveTo(popupRect.x, footerY);
+		canvasRenderingContext.lineTo(popupRect.x + popupRect.width, footerY);
+		canvasRenderingContext.stroke();
 		canvasRenderingContext.fillStyle = "#ffcc88";
 		canvasRenderingContext.font = "16px GyeonggiBatang, sans-serif";
-		canvasRenderingContext.textAlign = "right";
+		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(`경험 ${visitedCount} / ${this.#scenes.length}`, closeX - 16, popupRect.y + HEADER_HEIGHT * 0.5);
+		canvasRenderingContext.fillText(`경험 ${visitedCount} / ${this.#scenes.length}`, popupRect.x + SIDE_MARGIN, footerY + FOOTER_HEIGHT * 0.5);
 	}
 
 	//==============================================================================
@@ -413,13 +452,13 @@ export class StoryBranchPart extends Object {
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.strokeRect(x, y, width, height);
 
-		// 그래프 영역 안으로 클리핑 — 노드 / 연결선이 영역을 벗어나도 잘려서 그려진다.
+		// 그래프 영역 클리핑.
 		canvasRenderingContext.save();
 		canvasRenderingContext.beginPath();
 		canvasRenderingContext.rect(x + 1, y + 1, width - 2, height - 2);
 		canvasRenderingContext.clip();
 
-		// 격자: 고정 셀 크기 사용. 컨텐츠가 영역보다 크면 세로 스크롤 가능.
+		// 컨텐츠 전체 크기 계산.
 		let maxRow = 0;
 		let maxColumn = 0;
 		for (const scene of this.#scenes) {
@@ -430,20 +469,24 @@ export class StoryBranchPart extends Object {
 				maxColumn = scene.column;
 			}
 		}
-		const totalRows = maxRow + 1;
 		const totalColumns = maxColumn + 1;
+		const totalRows = maxRow + 1;
 		const totalContentWidth = (totalColumns - 1) * SCENE_CELL_SPACING_X + SCENE_NODE_WIDTH + SCENE_CELL_PADDING * 2;
 		const totalContentHeight = (totalRows - 1) * SCENE_CELL_SPACING_Y + SCENE_NODE_HEIGHT + SCENE_CELL_PADDING * 2;
+		this.#lastGraphAreaWidth = width;
 		this.#lastGraphAreaHeight = height;
+		this.#lastGraphContentWidth = totalContentWidth;
 		this.#lastGraphContentHeight = totalContentHeight;
+		this.#lastScrollMaxX = System.Math.max(0, totalContentWidth - width);
 		this.#lastScrollMaxY = System.Math.max(0, totalContentHeight - height);
-		// 컨텐츠가 영역보다 작으면 가운데 정렬, 크면 좌상단 정렬 + 스크롤.
-		const offsetX = totalContentWidth < width ? (width - totalContentWidth) * 0.5 : 0;
+
+		// 컨텐츠가 영역보다 작으면 가운데 정렬, 크면 스크롤 오프셋 적용.
+		const offsetX = totalContentWidth < width ? (width - totalContentWidth) * 0.5 : -this.#scrollX;
 		const offsetY = totalContentHeight < height ? (height - totalContentHeight) * 0.5 : -this.#scrollY;
 		const baseGridX = x + SCENE_CELL_PADDING + offsetX;
 		const baseGridY = y + SCENE_CELL_PADDING + offsetY;
 
-		// 노드 위치 사전 계산 (연결선과 노드 출력에서 공유).
+		// 노드 중심 좌표 사전 계산.
 		const nodeCenterById = new System.Map();
 		for (const scene of this.#scenes) {
 			const nodeCenterX = baseGridX + scene.column * SCENE_CELL_SPACING_X + SCENE_NODE_WIDTH * 0.5;
@@ -451,20 +494,28 @@ export class StoryBranchPart extends Object {
 			nodeCenterById.set(scene.id, { x: nodeCenterX, y: nodeCenterY });
 		}
 
-		// 1) 연결선 먼저 (노드 뒤에 그리도록).
+		// 히스토리 경로 계산 (시작 → 현재 씬).
+		const historyPath = this.computeHistoryPath();
+		const historySceneIds = historyPath.sceneIds;
+		const historyEdgePairs = historyPath.edgePairs;
+
+		// 연결선 1단계: 비-히스토리 간선 (회색, 아래에 그려짐).
+		canvasRenderingContext.strokeStyle = "#3a4a6a";
+		canvasRenderingContext.lineWidth = 1;
 		for (const scene of this.#scenes) {
 			const fromCenter = nodeCenterById.get(scene.id);
 			if (!fromCenter) {
 				continue;
 			}
-			for (const nextSceneId of scene.nextSceneIds) {
-				const toCenter = nodeCenterById.get(nextSceneId);
+			for (const nextId of scene.nextSceneIds) {
+				const edgeKey = `${scene.id}_${nextId}`;
+				if (historyEdgePairs.has(edgeKey)) {
+					continue;
+				}
+				const toCenter = nodeCenterById.get(nextId);
 				if (!toCenter) {
 					continue;
 				}
-				const isLineActive = scene.status === StorySceneStatus.visited || scene.status === StorySceneStatus.current;
-				canvasRenderingContext.strokeStyle = isLineActive ? "#d4b46a" : "#3a4a6a";
-				canvasRenderingContext.lineWidth = isLineActive ? 2 : 1;
 				canvasRenderingContext.beginPath();
 				canvasRenderingContext.moveTo(fromCenter.x, fromCenter.y);
 				canvasRenderingContext.lineTo(toCenter.x, toCenter.y);
@@ -472,7 +523,31 @@ export class StoryBranchPart extends Object {
 			}
 		}
 
-		// 2) 노드 출력.
+		// 연결선 2단계: 히스토리 간선 (골드, 위에 그려짐).
+		canvasRenderingContext.strokeStyle = "#d4b46a";
+		canvasRenderingContext.lineWidth = 3;
+		for (const scene of this.#scenes) {
+			const fromCenter = nodeCenterById.get(scene.id);
+			if (!fromCenter) {
+				continue;
+			}
+			for (const nextId of scene.nextSceneIds) {
+				const edgeKey = `${scene.id}_${nextId}`;
+				if (!historyEdgePairs.has(edgeKey)) {
+					continue;
+				}
+				const toCenter = nodeCenterById.get(nextId);
+				if (!toCenter) {
+					continue;
+				}
+				canvasRenderingContext.beginPath();
+				canvasRenderingContext.moveTo(fromCenter.x, fromCenter.y);
+				canvasRenderingContext.lineTo(toCenter.x, toCenter.y);
+				canvasRenderingContext.stroke();
+			}
+		}
+
+		// 노드 출력.
 		for (const scene of this.#scenes) {
 			const nodeCenter = nodeCenterById.get(scene.id);
 			if (!nodeCenter) {
@@ -480,13 +555,14 @@ export class StoryBranchPart extends Object {
 			}
 			const nodeX = nodeCenter.x - SCENE_NODE_WIDTH * 0.5;
 			const nodeY = nodeCenter.y - SCENE_NODE_HEIGHT * 0.5;
-			this.drawSceneNode(canvasRenderingContext, scene, nodeX, nodeY, SCENE_NODE_WIDTH, SCENE_NODE_HEIGHT);
+			const isOnHistoryPath = historySceneIds.has(scene.id);
+			this.drawSceneNode(canvasRenderingContext, scene, nodeX, nodeY, SCENE_NODE_WIDTH, SCENE_NODE_HEIGHT, isOnHistoryPath);
 			this.#nodeLayouts.push(new StorySceneNodeLayout(scene, nodeX, nodeY, SCENE_NODE_WIDTH, SCENE_NODE_HEIGHT));
 		}
 
 		canvasRenderingContext.restore();
 
-		// 스크롤바 (오버플로우 시 우측 가장자리에 골드 바).
+		// 세로 스크롤바 (우측 가장자리).
 		if (this.#lastScrollMaxY > 0) {
 			const scrollTrackX = x + width - SCROLL_BAR_WIDTH - 4;
 			const scrollTrackY = y + 4;
@@ -501,6 +577,22 @@ export class StoryBranchPart extends Object {
 			canvasRenderingContext.fillStyle = "#d4b46a";
 			canvasRenderingContext.fillRect(scrollTrackX, thumbY, SCROLL_BAR_WIDTH, thumbHeight);
 		}
+
+		// 가로 스크롤바 (하단 가장자리).
+		if (this.#lastScrollMaxX > 0) {
+			const scrollTrackX = x + 4;
+			const scrollTrackY = y + height - SCROLL_BAR_WIDTH - 4;
+			const scrollTrackWidth = width - 8;
+			canvasRenderingContext.fillStyle = "#1a1a2e";
+			canvasRenderingContext.fillRect(scrollTrackX, scrollTrackY, scrollTrackWidth, SCROLL_BAR_WIDTH);
+			canvasRenderingContext.strokeStyle = "#3a3a5a";
+			canvasRenderingContext.lineWidth = 1;
+			canvasRenderingContext.strokeRect(scrollTrackX, scrollTrackY, scrollTrackWidth, SCROLL_BAR_WIDTH);
+			const thumbWidth = System.Math.max(28, scrollTrackWidth * (this.#lastGraphAreaWidth / this.#lastGraphContentWidth));
+			const thumbX = scrollTrackX + (this.#scrollX / this.#lastScrollMaxX) * (scrollTrackWidth - thumbWidth);
+			canvasRenderingContext.fillStyle = "#d4b46a";
+			canvasRenderingContext.fillRect(thumbX, scrollTrackY, thumbWidth, SCROLL_BAR_WIDTH);
+		}
 	}
 
 	//==============================================================================
@@ -514,25 +606,24 @@ export class StoryBranchPart extends Object {
 	 * @param { number } width
 	 * @param { number } height
 	 */
-	drawSceneNode(canvasRenderingContext, scene, x, y, width, height) {
-		const isLocked = scene.status === StorySceneStatus.locked;
+	drawSceneNode(canvasRenderingContext, scene, x, y, width, height, isOnHistoryPath) {
+		const isUnvisited = scene.status === StorySceneStatus.unvisited;
 		const isCurrent = scene.status === StorySceneStatus.current;
-		const isVisited = scene.status === StorySceneStatus.visited;
 		const isSelected = scene.id === this.#selectedSceneId;
 
 		// 배경.
-		let backgroundColor = "#1f2a48";
-		if (isLocked) {
-			backgroundColor = "#16182a";
+		let backgroundColor = "#14182a";
+		if (isOnHistoryPath && !isCurrent) {
+			backgroundColor = "#1a2a40";
 		}
-		else if (isCurrent) {
-			backgroundColor = "#3a2a55";
+		if (isCurrent) {
+			backgroundColor = "#2a1840";
 		}
 		canvasRenderingContext.fillStyle = backgroundColor;
 		canvasRenderingContext.fillRect(x, y, width, height);
 
 		// 외곽선.
-		let borderColor = "#3a4a6a";
+		let borderColor = "#2a3450";
 		let borderWidth = 1;
 		if (isCurrent) {
 			borderColor = "#d4b46a";
@@ -542,46 +633,47 @@ export class StoryBranchPart extends Object {
 			borderColor = "#aaccff";
 			borderWidth = 2;
 		}
-		else if (isVisited) {
-			borderColor = "#88aa88";
+		else if (isOnHistoryPath) {
+			borderColor = "#5a8a5a";
+			borderWidth = 2;
 		}
 		canvasRenderingContext.strokeStyle = borderColor;
 		canvasRenderingContext.lineWidth = borderWidth;
 		canvasRenderingContext.strokeRect(x, y, width, height);
 
-		// 포트레이트 (이미지 대체용 색칠 원 + 한 글자).
+		// 포트레이트 원.
 		const portraitCenterX = x + width * 0.5;
 		const portraitCenterY = y + 38;
-		canvasRenderingContext.fillStyle = isLocked ? "#2a2a40" : scene.portraitColor;
+		canvasRenderingContext.fillStyle = isUnvisited ? "#1e2038" : scene.portraitColor;
 		canvasRenderingContext.beginPath();
 		canvasRenderingContext.arc(portraitCenterX, portraitCenterY, SCENE_PORTRAIT_RADIUS, 0, System.Math.PI * 2);
 		canvasRenderingContext.fill();
-		canvasRenderingContext.strokeStyle = isLocked ? "#444455" : "#ffffff";
-		canvasRenderingContext.lineWidth = 1.5;
+		canvasRenderingContext.strokeStyle = isUnvisited ? "#2a2a44" : (isCurrent ? "#d4b46a" : "#ffffff");
+		canvasRenderingContext.lineWidth = isCurrent ? 2 : 1.5;
 		canvasRenderingContext.stroke();
 
-		canvasRenderingContext.fillStyle = isLocked ? "#666677" : "#ffffff";
+		// 포트레이트 레이블.
+		canvasRenderingContext.fillStyle = isUnvisited ? "#404055" : "#ffffff";
 		canvasRenderingContext.font = "bold 18px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
 		canvasRenderingContext.fillText(scene.portraitLabel, portraitCenterX, portraitCenterY);
 
 		// 씬 이름.
-		const titleColor = isLocked ? "#666677" : "#ffffff";
-		canvasRenderingContext.fillStyle = titleColor;
+		canvasRenderingContext.fillStyle = isUnvisited ? "#555566" : (isCurrent ? "#ffffff" : "#aaccaa");
 		canvasRenderingContext.font = "bold 13px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "top";
-		canvasRenderingContext.fillText(isLocked ? "???" : scene.name, x + width * 0.5, y + 76);
+		canvasRenderingContext.fillText(scene.name, x + width * 0.5, y + 76);
 
-		// 상태 라벨.
-		const statusLabelText = this.statusLabel(scene.status);
-		const statusLabelColor = this.statusLabelColor(scene.status);
-		canvasRenderingContext.fillStyle = statusLabelColor;
-		canvasRenderingContext.font = "11px GyeonggiBatang, sans-serif";
-		canvasRenderingContext.textAlign = "center";
-		canvasRenderingContext.textBaseline = "bottom";
-		canvasRenderingContext.fillText(statusLabelText, x + width * 0.5, y + height - 10);
+		// 현재 위치 표시 (현재 씬만).
+		if (isCurrent) {
+			canvasRenderingContext.fillStyle = "#d4b46a";
+			canvasRenderingContext.font = "11px GyeonggiBatang, sans-serif";
+			canvasRenderingContext.textAlign = "center";
+			canvasRenderingContext.textBaseline = "bottom";
+			canvasRenderingContext.fillText("현재 위치", x + width * 0.5, y + height - 8);
+		}
 	}
 
 	//==============================================================================
@@ -612,7 +704,7 @@ export class StoryBranchPart extends Object {
 			return;
 		}
 
-		const isLocked = selectedScene.status === StorySceneStatus.locked;
+		const isCurrent = selectedScene.status === StorySceneStatus.current;
 		const innerX = x + DETAIL_INNER_PADDING;
 		const innerY = y + DETAIL_INNER_PADDING;
 
@@ -620,7 +712,7 @@ export class StoryBranchPart extends Object {
 		canvasRenderingContext.font = "bold 18px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "left";
 		canvasRenderingContext.textBaseline = "top";
-		canvasRenderingContext.fillText(isLocked ? "???" : selectedScene.name, innerX, innerY);
+		canvasRenderingContext.fillText(selectedScene.name, innerX, innerY);
 
 		canvasRenderingContext.fillStyle = this.statusLabelColor(selectedScene.status);
 		canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
@@ -628,8 +720,7 @@ export class StoryBranchPart extends Object {
 
 		canvasRenderingContext.fillStyle = "#dddddd";
 		canvasRenderingContext.font = "13px GyeonggiBatang, sans-serif";
-		const descriptionText = isLocked ? "아직 도달하지 못한 씬." : selectedScene.description;
-		const descriptionLines = this.wrapTextByWidth(canvasRenderingContext, descriptionText, width - 32);
+		const descriptionLines = this.wrapTextByWidth(canvasRenderingContext, selectedScene.description, width - 32);
 		const descriptionLineHeight = 19;
 		for (let lineIndex = 0; lineIndex < descriptionLines.length; ++lineIndex) {
 			canvasRenderingContext.fillText(descriptionLines[lineIndex], innerX, innerY + 56 + lineIndex * descriptionLineHeight);
@@ -644,28 +735,28 @@ export class StoryBranchPart extends Object {
 			canvasRenderingContext.fillStyle = "#dddddd";
 			for (let nextIndex = 0; nextIndex < selectedScene.nextSceneIds.length; ++nextIndex) {
 				const nextScene = this.findSceneById(selectedScene.nextSceneIds[nextIndex]);
-				const nextLabel = nextScene === null ? "???" : (nextScene.status === StorySceneStatus.locked ? "???" : nextScene.name);
+				const nextLabel = nextScene === null ? "???" : nextScene.name;
 				canvasRenderingContext.fillText(`· ${nextLabel}`, innerX, nextHeaderY + 22 + nextIndex * 18);
 			}
 		}
 
-		// 이동 버튼 (하단). 잠긴 씬은 비활성.
+		// 이동 버튼 (하단). 현재 씬이면 비활성.
 		const visitButtonHeight = 44;
 		const visitButtonX = x + 16;
 		const visitButtonY = y + height - visitButtonHeight - 16;
 		const visitButtonWidth = width - 32;
-		this.#visitButtonRect = isLocked ? null : { x: visitButtonX, y: visitButtonY, width: visitButtonWidth, height: visitButtonHeight };
-		canvasRenderingContext.fillStyle = isLocked ? "#16182a" : "#3a5a99";
+		this.#visitButtonRect = isCurrent ? null : { x: visitButtonX, y: visitButtonY, width: visitButtonWidth, height: visitButtonHeight };
+		canvasRenderingContext.fillStyle = isCurrent ? "#2a2a40" : "#3a5a99";
 		canvasRenderingContext.fillRect(visitButtonX, visitButtonY, visitButtonWidth, visitButtonHeight);
-		canvasRenderingContext.strokeStyle = isLocked ? "#3a3a4a" : "#ffffff";
+		canvasRenderingContext.strokeStyle = isCurrent ? "#3a3a5a" : "#ffffff";
 		canvasRenderingContext.lineWidth = 1;
 		canvasRenderingContext.strokeRect(visitButtonX, visitButtonY, visitButtonWidth, visitButtonHeight);
-		canvasRenderingContext.fillStyle = isLocked ? "#666677" : "#ffffff";
+		canvasRenderingContext.fillStyle = isCurrent ? "#555566" : "#ffffff";
 		canvasRenderingContext.font = "bold 16px GyeonggiBatangBold, sans-serif";
 		canvasRenderingContext.textAlign = "center";
 		canvasRenderingContext.textBaseline = "middle";
-		canvasRenderingContext.fillText(isLocked ? "이동 불가" : "이동", visitButtonX + visitButtonWidth * 0.5, visitButtonY + visitButtonHeight * 0.5);
-		if (!isLocked) {
+		canvasRenderingContext.fillText(isCurrent ? "현재 위치" : "이동", visitButtonX + visitButtonWidth * 0.5, visitButtonY + visitButtonHeight * 0.5);
+		if (!isCurrent) {
 			drawInputHintBadge(canvasRenderingContext, InputAction.confirm, visitButtonX, visitButtonY + visitButtonHeight);
 		}
 	}
@@ -698,14 +789,11 @@ export class StoryBranchPart extends Object {
 	 */
 	statusLabel(status) {
 		switch (status) {
-			case StorySceneStatus.locked: {
-				return "잠김";
-			}
-			case StorySceneStatus.available: {
-				return "갈 수 있음";
+			case StorySceneStatus.unvisited: {
+				return "미방문";
 			}
 			case StorySceneStatus.visited: {
-				return "경험함";
+				return "방문함";
 			}
 			case StorySceneStatus.current: {
 				return "현재 위치";
@@ -722,14 +810,11 @@ export class StoryBranchPart extends Object {
 	 */
 	statusLabelColor(status) {
 		switch (status) {
-			case StorySceneStatus.locked: {
+			case StorySceneStatus.unvisited: {
 				return "#666677";
 			}
-			case StorySceneStatus.available: {
-				return "#aaccff";
-			}
 			case StorySceneStatus.visited: {
-				return "#88dd88";
+				return "#88aa88";
 			}
 			case StorySceneStatus.current: {
 				return "#d4b46a";
@@ -754,6 +839,74 @@ export class StoryBranchPart extends Object {
 			}
 		}
 		return null;
+	}
+
+	//==============================================================================
+	// 시작 노드에서 현재 노드까지의 히스토리 경로 계산 (BFS).
+	// 방문한 노드(visited / current) 만 경유하며 시작 → 현재 경로를 추적.
+	// 반환: { sceneIds: Set<number>, edgePairs: Set<string> }
+	//==============================================================================
+	computeHistoryPath() {
+		const resultSceneIds = new System.Set();
+		const resultEdgePairs = new System.Set();
+		if (this.#scenes.length === 0) {
+			return { sceneIds: resultSceneIds, edgePairs: resultEdgePairs };
+		}
+		const startSceneId = this.#scenes[0].id;
+		let targetSceneId = -1;
+		for (const scene of this.#scenes) {
+			if (scene.status === StorySceneStatus.current) {
+				targetSceneId = scene.id;
+				break;
+			}
+		}
+		if (targetSceneId === -1) {
+			return { sceneIds: resultSceneIds, edgePairs: resultEdgePairs };
+		}
+		const parentOf = new System.Map();
+		const seen = new System.Set();
+		seen.add(startSceneId);
+		const queue = [startSceneId];
+		let foundTarget = false;
+		while (queue.length > 0) {
+			const currentId = queue.shift();
+			if (currentId === targetSceneId) {
+				foundTarget = true;
+				break;
+			}
+			const currentScene = this.findSceneById(currentId);
+			if (currentScene === null) {
+				continue;
+			}
+			for (const nextId of currentScene.nextSceneIds) {
+				if (seen.has(nextId)) {
+					continue;
+				}
+				const nextScene = this.findSceneById(nextId);
+				if (nextScene === null) {
+					continue;
+				}
+				if (nextScene.status !== StorySceneStatus.visited && nextScene.status !== StorySceneStatus.current) {
+					continue;
+				}
+				seen.add(nextId);
+				parentOf.set(nextId, currentId);
+				queue.push(nextId);
+			}
+		}
+		if (!foundTarget) {
+			return { sceneIds: resultSceneIds, edgePairs: resultEdgePairs };
+		}
+		let traceId = targetSceneId;
+		while (traceId !== undefined && traceId !== null) {
+			resultSceneIds.add(traceId);
+			const parentId = parentOf.get(traceId);
+			if (parentId !== undefined) {
+				resultEdgePairs.add(`${parentId}_${traceId}`);
+			}
+			traceId = parentId;
+		}
+		return { sceneIds: resultSceneIds, edgePairs: resultEdgePairs };
 	}
 
 	//==============================================================================
@@ -810,15 +963,12 @@ export class StoryBranchPart extends Object {
 	// 임시 샘플 분기 데이터.
 	//==============================================================================
 	installSampleScenes() {
-		const sampleScenes = [];
-		sampleScenes.push(new StoryScene(1, "검종 산문 앞", "검종 입문 시험을 치르는 곳.", "산", "#5577aa", 0, 0, StorySceneStatus.visited, [2]));
-		sampleScenes.push(new StoryScene(2, "검종 본전", "종파의 중심. 상점·대장간·도장이 모여 있다.", "본", "#88aa88", 1, 1, StorySceneStatus.current, [3, 4]));
-		sampleScenes.push(new StoryScene(3, "검종 후산 동굴", "사람 발길이 끊긴 곳.", "후", "#664488", 0, 2, StorySceneStatus.available, [5]));
-		sampleScenes.push(new StoryScene(4, "강호 시장", "여러 종파의 수사들이 오가는 떠들썩한 시장.", "시", "#cc8844", 2, 2, StorySceneStatus.available, [5]));
-		sampleScenes.push(new StoryScene(5, "비검문 외곽", "또 다른 종파의 영역.", "비", "#aa3344", 1, 3, StorySceneStatus.locked, [6]));
-		sampleScenes.push(new StoryScene(6, "?? ", "감춰진 진실.", "?", "#444455", 1, 4, StorySceneStatus.locked, []));
-		this.setScenes(sampleScenes);
-		this.#selectedSceneId = 2;
+		const scenes = [];
+		for (const data of branchTable) {
+			scenes.push(new StoryScene(data.id, data.name, data.description, data.portraitLabel, data.portraitColor, data.row, data.column, data.status, data.nextSceneIds));
+		}
+		this.setScenes(scenes);
+		this.#selectedSceneId = 14;
 	}
 
 	//==============================================================================

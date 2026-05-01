@@ -2,6 +2,7 @@
 // 포함 모듈 목록.
 //==============================================================================
 const System = globalThis;
+import { WorldNode } from "../../libs/vanilla.js/src/core/node/worldnode.js";
 import { Vector2 } from "../../libs/vanilla.js/src/base/vector2.js";
 import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 
@@ -62,7 +63,7 @@ class Tile {
 // 그리드 위에서 동일 레벨 타일 두 개를 합치면 다음 레벨로 승급.
 // 일정 간격으로 빈 칸에 레벨 1 타일이 자동 스폰.
 //==============================================================================
-export class MergeGame {
+export class MergeGameNode extends WorldNode {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
@@ -78,11 +79,15 @@ export class MergeGame {
 	/** @private @type { Vector2 } */ #dragOffset;
 	/** @private @type { boolean } */ #isDragging;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
+	/** @private @type { InputManager | null } */ #inputManager;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #popupRect;
 
 	//==============================================================================
 	// 생성.
 	//==============================================================================
 	constructor() {
+		super();
+		
 		this.#grid = null;
 		this.#tiles = [];
 		this.#score = 0;
@@ -95,6 +100,8 @@ export class MergeGame {
 		this.#dragOffset = Vector2.zero();
 		this.#isDragging = false;
 		this.#audioBeepPlayer = null;
+		this.#inputManager = null;
+		this.#popupRect = null;
 		this.reset();
 	}
 
@@ -122,6 +129,18 @@ export class MergeGame {
 	 */
 	getScore() {
 		return this.#score;
+	}
+
+	//==============================================================================
+	// 입력 컨텍스트 주입 (매 프레임 tick 전에 호출).
+	//==============================================================================
+	/**
+	 * @param { InputManager | null } inputManager
+	 * @param { { x: number, y: number, width: number, height: number } | null } popupRect
+	 */
+	setInputContext(inputManager, popupRect) {
+		this.#inputManager = inputManager;
+		this.#popupRect = popupRect;
 	}
 
 	//==============================================================================
@@ -159,10 +178,12 @@ export class MergeGame {
 	//==============================================================================
 	/**
 	 * @param { number } timeDelta
-	 * @param { InputManager } inputManager
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	tick(timeDelta, inputManager, popupRect) {
+	tick(timeDelta) {
+		if (!this.isActive()) { return; }
+		const inputManager = this.#inputManager;
+		const popupRect = this.#popupRect;
+		if (!inputManager || !popupRect) { return; }
 		this.layoutBoard(popupRect);
 
 		// 자동 스폰. 드래그 중에는 스폰 타이머를 정지시켜 게임 흐름을 방해하지 않음.
@@ -247,9 +268,11 @@ export class MergeGame {
 	//==============================================================================
 	/**
 	 * @param { Graphic } graphic
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	draw(graphic, popupRect) {
+	draw(graphic) {
+		if (!this.isActive()) { return; }
+		const popupRect = this.#popupRect;
+		if (!popupRect) { return; }
 		const canvasRenderingContext = graphic.getCanvasRenderingContext();
 
 		// 점수 (팝업 좌상단).

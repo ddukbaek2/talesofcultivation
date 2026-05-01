@@ -2,6 +2,7 @@
 // 포함 모듈 목록.
 //==============================================================================
 const System = globalThis;
+import { WorldNode } from "../../libs/vanilla.js/src/core/node/worldnode.js";
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
 import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 
@@ -204,7 +205,7 @@ const DungeonActionKey = System.Object.freeze({
 // - "탈출" 은 보상 없이 던전 종료. "완료" (출구 룸 도달) 는 정의된 보상을 onCompleted(rewards) 콜백으로 전달.
 // - 외부 매니저 (main.js) 가 onCompleted / onEscaped 결과를 받아 PlayerProfile 에 반영.
 //==============================================================================
-export class DungeonPart extends Object {
+export class DungeonPartNode extends WorldNode {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
@@ -220,6 +221,8 @@ export class DungeonPart extends Object {
 	/** @private @type { ((DungeonReward[]) => void) | null } */ #onCompleted;
 	/** @private @type { (() => void) | null } */ #onEscaped;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
+	/** @private @type { InputManager | null } */ #inputManager;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #popupRect;
 
 	//==============================================================================
 	// 생성.
@@ -238,6 +241,8 @@ export class DungeonPart extends Object {
 		this.#onCompleted = null;
 		this.#onEscaped = null;
 		this.#audioBeepPlayer = null;
+		this.#inputManager = null;
+		this.#popupRect = null;
 		this.installSampleDefinition();
 	}
 
@@ -271,6 +276,18 @@ export class DungeonPart extends Object {
 	 */
 	setOnEscaped(callback) {
 		this.#onEscaped = callback;
+	}
+
+	//==============================================================================
+	// 입력 컨텍스트 주입 (매 프레임 tick 전에 호출).
+	//==============================================================================
+	/**
+	 * @param { InputManager | null } inputManager
+	 * @param { { x: number, y: number, width: number, height: number } | null } popupRect
+	 */
+	setInputContext(inputManager, popupRect) {
+		this.#inputManager = inputManager;
+		this.#popupRect = popupRect;
 	}
 
 	//==============================================================================
@@ -325,11 +342,18 @@ export class DungeonPart extends Object {
 	// 갱신.
 	//==============================================================================
 	/**
+	 * @override
 	 * @param { number } timeDelta
-	 * @param { InputManager } inputManager
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	tick(timeDelta, inputManager, popupRect) {
+	tick(timeDelta) {
+		if (!this.isActive()) {
+			return;
+		}
+		const inputManager = this.#inputManager;
+		const popupRect = this.#popupRect;
+		if (!inputManager || !popupRect) {
+			return;
+		}
 		if (this.#outcome !== DungeonOutcomeKind.inProgress) {
 			return;
 		}
@@ -447,10 +471,17 @@ export class DungeonPart extends Object {
 	// 출력.
 	//==============================================================================
 	/**
+	 * @override
 	 * @param { Graphic } graphic
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	draw(graphic, popupRect) {
+	draw(graphic) {
+		if (!this.isActive()) {
+			return;
+		}
+		const popupRect = this.#popupRect;
+		if (!popupRect) {
+			return;
+		}
 		const canvasRenderingContext = graphic.getCanvasRenderingContext();
 
 		// 배경.

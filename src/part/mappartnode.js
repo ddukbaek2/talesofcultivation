@@ -2,6 +2,7 @@
 // 포함 모듈 목록.
 //==============================================================================
 const System = globalThis;
+import { WorldNode } from "../../libs/vanilla.js/src/core/node/worldnode.js";
 import { Object } from "../../libs/vanilla.js/src/base/object.js";
 import { AudioBeepPlayer } from "../base/audiobeepplayer.js";
 
@@ -149,7 +150,7 @@ class MapActivityButtonLayout extends Object {
 // - 우측: 선택된 노드의 상세 + 활동 버튼 (이동 / 수련 / 성장 / 이벤트 / 대사 / 전투).
 // - 활동 선택은 외부 onActivitySelected 콜백으로 위임 (메인 매니저가 파트 전환 처리).
 //==============================================================================
-export class MapPart extends Object {
+export class MapPartNode extends WorldNode {
 	//==============================================================================
 	// 멤버 변수 목록.
 	//==============================================================================
@@ -164,6 +165,8 @@ export class MapPart extends Object {
 	/** @private @type { string } */ #playerStageName;
 	/** @private @type { number } */ #daysPassed;
 	/** @private @type { AudioBeepPlayer | null } */ #audioBeepPlayer;
+	/** @private @type { InputManager | null } */ #inputManager;
+	/** @private @type { { x: number, y: number, width: number, height: number } | null } */ #popupRect;
 
 	//==============================================================================
 	// 생성.
@@ -181,6 +184,8 @@ export class MapPart extends Object {
 		this.#playerStageName = "";
 		this.#daysPassed = 0;
 		this.#audioBeepPlayer = null;
+		this.#inputManager = null;
+		this.#popupRect = null;
 		this.installSampleNodes();
 	}
 
@@ -231,6 +236,18 @@ export class MapPart extends Object {
 	}
 
 	//==============================================================================
+	// 입력 컨텍스트 주입 (매 프레임 tick 전에 호출).
+	//==============================================================================
+	/**
+	 * @param { InputManager | null } inputManager
+	 * @param { { x: number, y: number, width: number, height: number } | null } popupRect
+	 */
+	setInputContext(inputManager, popupRect) {
+		this.#inputManager = inputManager;
+		this.#popupRect = popupRect;
+	}
+
+	//==============================================================================
 	// 활성화 시 초기 상태 (선택 / 입력 누름 상태) 리셋.
 	//==============================================================================
 	reset() {
@@ -244,11 +261,18 @@ export class MapPart extends Object {
 	// 갱신.
 	//==============================================================================
 	/**
+	 * @override
 	 * @param { number } timeDelta
-	 * @param { InputManager } inputManager
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	tick(timeDelta, inputManager, popupRect) {
+	tick(timeDelta) {
+		if (!this.isActive()) {
+			return;
+		}
+		const inputManager = this.#inputManager;
+		const popupRect = this.#popupRect;
+		if (!inputManager || !popupRect) {
+			return;
+		}
 		const isPressed = inputManager.isTouchPressed();
 		if (isPressed && !this.#wasTouchPressed) {
 			const viewInputPosition = inputManager.getViewInputPosition();
@@ -302,10 +326,17 @@ export class MapPart extends Object {
 	// 출력.
 	//==============================================================================
 	/**
+	 * @override
 	 * @param { Graphic } graphic
-	 * @param { { x: number, y: number, width: number, height: number } } popupRect
 	 */
-	draw(graphic, popupRect) {
+	draw(graphic) {
+		if (!this.isActive()) {
+			return;
+		}
+		const popupRect = this.#popupRect;
+		if (!popupRect) {
+			return;
+		}
 		const canvasRenderingContext = graphic.getCanvasRenderingContext();
 
 		// 배경.

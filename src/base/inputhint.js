@@ -33,6 +33,7 @@ const InputAction = System.Object.freeze({
 	nextTab: "nextTab",
 	focusPrev: "focusPrev",
 	focusNext: "focusNext",
+	branch: "branch",
 });
 
 
@@ -128,6 +129,9 @@ export function resolveInputHintLabel(inputMode, actionKey) {
 			case InputAction.focusNext: {
 				return new InputHintLabel("▶", true);
 			}
+			case InputAction.branch: {
+				return new InputHintLabel("X", true);
+			}
 			default: {
 				return null;
 			}
@@ -165,6 +169,9 @@ export function resolveInputHintLabel(inputMode, actionKey) {
 			}
 			case InputAction.focusNext: {
 				return new InputHintLabel("▶", true);
+			}
+			case InputAction.branch: {
+				return new InputHintLabel("T", true);
 			}
 			default: {
 				return null;
@@ -269,6 +276,9 @@ export function resolveKeyboardKeyCode(actionKey) {
 		case InputAction.focusNext: {
 			return "ArrowRight";
 		}
+		case InputAction.branch: {
+			return "KeyT";
+		}
 		default: {
 			return null;
 		}
@@ -316,6 +326,9 @@ export function resolveGamepadButtonIndex(actionKey) {
 		}
 		case InputAction.focusNext: {
 			return GamepadButtonCode.DPAD_RIGHT;
+		}
+		case InputAction.branch: {
+			return GamepadButtonCode.X_SQUARE;
 		}
 		default: {
 			return -1;

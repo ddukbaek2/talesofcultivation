@@ -27,7 +27,13 @@
       "Bash(npm run *)",
       "Bash(git mv *)",
       "Bash(date /t)",
-      "Bash(time /t)"
+      "Bash(time /t)",
+      "Bash(sed -i 's/^export class TitlePart extends WorldNode/export class TitlePartNode extends WorldNode/' src/part/titlepartnode.js)",
+      "Bash(sed -i 's/^export class GameOverPart extends WorldNode/export class GameOverPartNode extends WorldNode/' src/part/gameoverpartnode.js)",
+      "Bash(sed -i 's/^export class DialoguePart extends WorldNode/export class DialoguePartNode extends WorldNode/' src/part/dialoguepartnode.js)",
+      "Bash(sed -i 's/^export class MapPart extends WorldNode/export class MapPartNode extends WorldNode/' src/part/mappartnode.js)",
+      "Bash(sed -i 's/^export class DungeonPart extends WorldNode/export class DungeonPartNode extends WorldNode/' src/part/dungeonpartnode.js)",
+      "Bash(dir D:\\\\Github\\\\talesofcultivation\\\\src *)"
     ]
   }
 }
